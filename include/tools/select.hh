@@ -13,8 +13,8 @@
 namespace birdsong {
 
 template<typename... Awaits, typename... Lambdas>
-Coro<>
-Select(Runtime& rt, std::pair<Awaits, Lambdas>&&... cases)
+Coro<Empty>
+Select(Runtime& rt, std::pair<Awaits, Lambdas>... cases)
 {
   auto waker = rt.create_waker();
   Mutex finishMutex, listMutex;

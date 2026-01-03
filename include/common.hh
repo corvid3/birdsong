@@ -67,6 +67,9 @@ template<typename T>
 class MutexWrapper
 {
 public:
+  MutexWrapper(T in)
+    : m_data(std::move(in)) {};
+
   auto with_lock(std::invocable<T&> auto lambda)
   {
     MutexLock lock(m_mutex);

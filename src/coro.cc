@@ -1,3 +1,4 @@
+#include "coro.hh"
 #include <coroutine>
 #include <exception>
 
@@ -70,14 +71,33 @@ PromiseBase::initial_suspend()
   return {};
 }
 
-std::suspend_always
-PromiseBase::final_suspend() noexcept
+bool
+PromiseBase::final_kill::await_ready() noexcept
 {
-  if (this->parent) {
-    runtime.current_task().acquire()->handle = this->parent->handle;
-    runtime.create_waker().wake();
-  }
+  return false;
+}
 
+void
+PromiseBase::final_kill::await_suspend(std::coroutine_handle<> handle) noexcept
+{
+  PromiseBase& prom = basic_handle_from_void(handle).promise();
+
+  if (prom.parent) {
+    prom.runtime.current_task().acquire()->handle = prom.parent->handle;
+    prom.runtime.create_waker().wake();
+  }
+}
+
+void
+PromiseBase::final_kill::await_resume() noexcept
+{
+  std::cerr << "invalid await_resume in final_kill\n";
+  std::terminate();
+}
+
+auto
+PromiseBase::final_suspend() noexcept -> final_kill
+{
   return {};
 }
 

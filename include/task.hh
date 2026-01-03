@@ -124,13 +124,21 @@ public:
     : rt(rt)
     , m_state(dependent.acquire()->state.load()) {};
 
+  JoinHandleBase(const JoinHandleBase&) = delete;
+  JoinHandleBase(JoinHandleBase&& rhs)
+    : rt(rhs.rt)
+    , m_state(rhs.m_state.load()) {};
+
+  JoinHandleBase& operator=(const JoinHandleBase&) = delete;
+  JoinHandleBase& operator=(JoinHandleBase&&) = delete;
+
   void await_suspend(std::coroutine_handle<>);
-  Task const& get_task() { return m_state->dependent; }
+  Task const& get_task() { return m_state.load()->dependent; }
   void kill();
 
 protected:
   Runtime& rt;
-  std::shared_ptr<SharedTaskStateBase> m_state;
+  std::atomic<std::shared_ptr<SharedTaskStateBase>> m_state;
 };
 
 /* ugh i can clean this up later.
@@ -165,7 +173,7 @@ public:
 private:
   SharedTaskStateRet<T>& get_state()
   {
-    return static_cast<SharedTaskStateRet<T>&>(*m_state.get());
+    return static_cast<SharedTaskStateRet<T>&>(*m_state.load().get());
   };
 
   bool ready{ false };

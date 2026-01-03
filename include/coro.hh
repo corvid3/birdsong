@@ -29,7 +29,15 @@ public:
   ~PromiseBase() = default;
   void unhandled_exception();
   std::suspend_always initial_suspend();
-  std::suspend_always final_suspend() noexcept;
+
+  struct final_kill
+  {
+    bool await_ready() noexcept;
+    void await_suspend(std::coroutine_handle<>) noexcept;
+    void await_resume() noexcept;
+  };
+
+  final_kill final_suspend() noexcept;
 
   std::coroutine_handle<PromiseBase> handle;
   Runtime& runtime;
@@ -75,11 +83,11 @@ class CoroAwaiterImpl
     void update_task_resume(BasicHandle inside, BasicHandle outside);
   };
 
-  template<typename T, bool Eager>
+  template<typename T>
   friend class Coro;
 };
 
-template<typename T = Empty, bool Eager = false>
+template<typename T = Empty>
 class Coro : public CoroBase
 {
 public:
@@ -106,8 +114,6 @@ public:
   {
     Awaiter(std::coroutine_handle<PromiseBase> inside)
       : inside(inside) {};
-
-    bool await_ready() { return Eager; }
 
     void await_suspend(std::coroutine_handle<> outside)
     {

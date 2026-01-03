@@ -75,12 +75,12 @@ Task::~Task()
 void
 JoinHandleBase::await_suspend(std::coroutine_handle<>)
 {
-  m_state->join_handle_wakers.emplace_back(rt.create_waker());
-  m_state->mutex.unlock();
+  m_state.load()->join_handle_wakers.emplace_back(rt.create_waker());
+  m_state.load()->mutex.unlock();
 }
 
 void
 JoinHandleBase::kill()
 {
-  m_state->killswitch = true;
+  m_state.load()->killswitch = true;
 }

@@ -37,7 +37,7 @@ template<typename T>
 class AsyncMutexWrapper
 {
 public:
-  Coro<Empty, true> with_lock(std::invocable<T&> auto lambda) &&
+  Coro<Empty> with_lock(std::invocable<T&> auto lambda) &&
   {
     co_await m_mutex.lock();
     auto&& out = lambda(m_data);
