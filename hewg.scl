@@ -1,0 +1,37 @@
+[hewg]
+version = "0.4.0-alpha"
+type = "library"
+
+[project]
+version = "0.0.0"
+org = "crow"
+name = "birdsong"
+description = "C++ coroutine support library"
+authors = { }
+
+[depends]
+internal = { }
+external = { }
+
+[cxx]
+flags = { "-Wall" "-Wextra" "-Werror" }
+std = 23
+sources = {
+	"task.cc"
+	"coro.cc"
+	"runtime.cc"
+	"reactor.cc"
+	"thread_queue.cc"
+
+	"tools/mutex.cc" "tools/token.cc"
+	"tools/sleep.cc"
+	"tools/tcp.cc"
+}
+
+[c]
+flags = { "-Wall" "-Wextra" "-Werror" }
+std = 17
+sources = { }
+
+[hooks.prebuild]
+[hooks.postbuild]
