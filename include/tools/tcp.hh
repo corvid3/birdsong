@@ -8,6 +8,7 @@
 
 #include "../common.hh"
 #include "../coro.hh"
+#include "../io.hh"
 
 /* im _not_ trying to build a cross-platform networking
  * library here, so some of the internal posix networking
@@ -17,9 +18,9 @@ namespace birdsong {
 
 class TCPSocket
 {
-  struct Recv : AwaitableBase
+  struct Read : AwaitableBase
   {
-    Recv(TCPSocket& socket, std::span<std::byte> buf)
+    Read(TCPSocket& socket, std::span<std::byte> buf)
       : socket(socket)
       , buf(buf) {};
 
@@ -30,14 +31,14 @@ class TCPSocket
     std::span<std::byte> buf;
   };
 
-  struct Send : AwaitableBase
+  struct Write : AwaitableBase
   {
-    Send(TCPSocket& socket, std::span<const std::byte> buf)
+    Write(TCPSocket& socket, std::span<const std::byte> buf)
       : socket(socket)
       , buf(buf) {};
 
     void await_suspend(std::coroutine_handle<>);
-    std::expected<unsigned, unsigned> await_resume();
+    IOResult<unsigned> await_resume();
 
     TCPSocket& socket;
     std::span<std::byte const> buf;
@@ -71,8 +72,8 @@ public:
 
   static Connect connect(Runtime&, unsigned short port, uint32_t address);
 
-  Recv recv(std::span<std::byte> buffer);
-  Send send(std::span<std::byte const> buffer);
+  Read read(std::span<std::byte> buffer);
+  Write write(std::span<std::byte const> buffer);
 
 private:
   unsigned m_fd = -1u;

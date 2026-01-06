@@ -64,3 +64,9 @@ Runtime::current_task()
 {
   return *acquire()->get_this_thread_data().m_currentTask;
 }
+
+unsigned
+Runtime::num_tasks()
+{
+  return m_atomicData->m_aliveTasks;
+}

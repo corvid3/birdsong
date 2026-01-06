@@ -48,6 +48,10 @@ CoroAwaiterImpl::AwaiterImpl::update_task_resume(BasicHandle inside,
       ->get_this_thread_data()
       .m_currentTask->acquire()
       ->handle = PromiseBase::handle_from_void(outside);
+
+  /* exception handling jank */
+  if (inside.promise().exception)
+    std::rethrow_exception(inside.promise().exception);
 }
 
 std::coroutine_handle<PromiseBase>
@@ -59,7 +63,9 @@ PromiseBase::handle_from_void(std::coroutine_handle<> const& handle)
 void
 PromiseBase::unhandled_exception()
 try {
-  std::rethrow_exception(std::current_exception());
+  if (!parent)
+    std::rethrow_exception(std::current_exception());
+  this->exception = std::current_exception();
 } catch (std::exception const& e) {
   std::cerr << e.what() << std::endl;
   std::terminate();

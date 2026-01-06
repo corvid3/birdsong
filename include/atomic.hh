@@ -54,9 +54,8 @@ public:
 
     ~Transaction()
     {
-      if (db) {
+      if (db)
         db->m_mutex.unlock();
-      }
     };
   };
 

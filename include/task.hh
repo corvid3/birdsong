@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <list>
 #include <memory>
 
@@ -12,11 +13,22 @@ namespace birdsong {
 class Runtime;
 class Task;
 
+template<typename T>
+concept Awaitable = requires(T t) {
+  { t.await_ready() } -> std::same_as<bool>;
+  t.await_suspend();
+  t.await_resume();
+};
+
+template<typename Awaitable>
+concept Cancellable = requires(Awaitable t) {
+  { t.cancel() };
+};
+
 class Waker : public Atom
 {
 public:
   Waker(Runtime& runtime, std::unique_ptr<Task> task);
-
   Waker(Waker&&);
 
   /* NOTE: will attempt to lock the task it owns!
@@ -35,10 +47,10 @@ private:
 
 struct SharedTaskStateBase
 {
-  SharedTaskStateBase(Task const& dependent)
+  SharedTaskStateBase(Task& dependent)
     : dependent(dependent) {};
 
-  Task const& dependent;
+  Task& dependent;
 
   /* any JoinHandles of a task that are co_await'd have
    * the parent task slept and the wakers are added here.
@@ -85,10 +97,11 @@ public:
   Task& operator=(Task&&) = delete;
   virtual ~Task();
 
+  void kill();
+
   bool operator==(Task const& rhs) const { return this == &rhs; };
 
   Data& get_data(Atom::Key) { return m_data; };
-
   unsigned tag;
 
 private:
@@ -132,6 +145,7 @@ public:
   JoinHandleBase& operator=(const JoinHandleBase&) = delete;
   JoinHandleBase& operator=(JoinHandleBase&&) = delete;
 
+  bool await_ready();
   void await_suspend(std::coroutine_handle<>);
   Task const& get_task() { return m_state.load()->dependent; }
   void kill();
@@ -153,12 +167,6 @@ public:
   JoinHandle& operator=(JoinHandle&&) = delete;
 
   using JoinHandleBase::JoinHandleBase;
-
-  bool await_ready()
-  {
-    get_state().mutex.lock();
-    return (this->ready = get_state().retval.has_value());
-  }
 
   T await_resume()
   {

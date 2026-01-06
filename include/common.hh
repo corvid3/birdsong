@@ -67,6 +67,7 @@ template<typename T>
 class MutexWrapper
 {
 public:
+  MutexWrapper() = default;
   MutexWrapper(T in)
     : m_data(std::move(in)) {};
 

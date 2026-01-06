@@ -93,6 +93,7 @@ public:
    * panics if called from outside of a runtimes thread */
   Waker create_waker();
   Task& current_task();
+  unsigned num_tasks();
 
 private:
   template<typename T>

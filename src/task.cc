@@ -1,4 +1,5 @@
 #include <memory>
+#include <print>
 #include <utility>
 
 #include "priv_runtime.hh"
@@ -27,27 +28,26 @@ Waker::wake()
   if (not task)
     return;
 
-  auto task_trans = transaction->get()->acquire();
-
-  /* for wakers with multiple consumers we need to check that the waker
-   * has not yet been used */
-  if (task_trans->state.load()->killswitch)
-    return;
-
   runtime.m_threadQueue.push_task(
     [&runtime = this->runtime, task = std::move(this->task)]() mutable {
+      auto state = task->acquire()->state.load();
+      state->mutex.lock();
+      auto valid = not state->killswitch;
+
       auto handle = (runtime.acquire()
                        ->m_threadData.at(ThreadQueue::GetThisThreadID())
                        .m_currentTask = std::move(task))
                       ->acquire()
                       ->handle;
 
-      handle.resume();
+      if (valid && handle)
+        handle.resume();
 
       auto fin = std::move(runtime.acquire()
                              ->m_threadData.at(ThreadQueue::GetThisThreadID())
                              .m_currentTask);
-      fin.reset();
+
+      state->mutex.unlock();
     });
 }
 
@@ -61,16 +61,34 @@ Task::Task(Runtime&, PromiseBase* promise)
   promise->runtime.get_atomic_data().m_aliveTasks++;
 };
 
-Task::~Task()
+void
+Task::kill()
 {
   auto transaction = acquire();
+  transaction->state.load()->killswitch = true;
 
   transaction->handle.promise().runtime.get_atomic_data().m_aliveTasks--;
-  transaction->handle.destroy();
+  if (transaction->handle)
+    transaction->handle.destroy();
+}
 
-  for (auto& join_handles : transaction->state.load()->join_handle_wakers)
+Task::~Task()
+{
+  acquire()->state.load()->mutex.lock();
+  if (not acquire()->state.load()->killswitch)
+    kill();
+
+  for (auto& join_handles : acquire()->state.load()->join_handle_wakers)
     join_handles.wake();
+  acquire()->state.load()->mutex.unlock();
 };
+
+bool
+JoinHandleBase::await_ready()
+{
+  m_state.load()->mutex.lock();
+  return m_state.load()->killswitch;
+}
 
 void
 JoinHandleBase::await_suspend(std::coroutine_handle<>)
@@ -82,5 +100,8 @@ JoinHandleBase::await_suspend(std::coroutine_handle<>)
 void
 JoinHandleBase::kill()
 {
-  m_state.load()->killswitch = true;
+  m_state.load()->mutex.lock();
+  if (not m_state.load()->killswitch)
+    m_state.load()->dependent.kill();
+  m_state.load()->mutex.unlock();
 }

@@ -3,6 +3,7 @@
 #include <any>
 #include <concepts>
 #include <coroutine>
+#include <exception>
 #include <iostream>
 #include <optional>
 #include <utility>
@@ -40,6 +41,7 @@ public:
   final_kill final_suspend() noexcept;
 
   std::coroutine_handle<PromiseBase> handle;
+  std::exception_ptr exception = nullptr;
   Runtime& runtime;
 
   /* parent coroutine promise */

@@ -1,6 +1,7 @@
 #include <coroutine>
 #include <list>
 
+#include "common.hh"
 #include "coro.hh"
 #include "priv_runtime.hh"
 #include "task.hh"
@@ -10,9 +11,13 @@ using namespace birdsong;
 
 struct Token::Impl
 {
-  Mutex mutex;
-  std::atomic<bool> flag{ false };
-  std::list<Waker> waiting;
+  struct Data
+  {
+    bool flag;
+    std::list<Waker> waiting;
+  };
+
+  MutexWrapper<Data> data;
 };
 
 Token::Token()
@@ -21,38 +26,47 @@ Token::Token()
 Token::
 operator bool() const
 {
-  return m_impl->flag.load();
+  return m_impl->data.with_lock([](auto const& in) { return in.flag; });
 };
 
 bool
 Token::await_ready()
 {
-  m_impl->mutex.lock();
-  if (m_impl->flag)
-    return m_impl->mutex.unlock(), true;
-  else
-    return false;
+  return false;
 }
 
-void
+bool
 Token::await_suspend(std::coroutine_handle<> handle)
 {
-  auto& rt = basic_handle_from_void(handle).promise().runtime;
-  m_impl->waiting.push_back(rt.create_waker());
-  m_impl->mutex.unlock();
+  return m_impl->data.with_lock([&](Impl::Data& in) {
+    if (in.flag)
+      return false;
+
+    in.waiting.push_back(
+      basic_handle_from_void(handle).promise().runtime.create_waker());
+
+    this->m_waker = --in.waiting.end();
+
+    return true;
+  });
 }
 
 void
 Token::go()
 {
-  m_impl->mutex.lock();
+  m_impl->data.with_lock([&](Impl::Data& data) {
+    data.flag = true;
+    for (auto& waiter : data.waiting)
+      waiter.wake();
+  });
+}
 
-  if (m_impl->flag != true) {
-    m_impl->flag = true;
-    for (auto& waker : m_impl->waiting) {
-      waker.wake();
+Token::~Token()
+{
+  m_impl->data.with_lock([&](Impl::Data& in) {
+    if (this->m_waker) {
+      (*this->m_waker)->wake();
+      in.waiting.erase(*this->m_waker);
     }
-  }
-
-  m_impl->mutex.unlock();
+  });
 }

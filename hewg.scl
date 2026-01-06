@@ -24,8 +24,7 @@ sources = {
 	"thread_queue.cc"
 
 	"tools/mutex.cc" "tools/token.cc"
-	"tools/sleep.cc"
-	"tools/tcp.cc"
+	"tools/sleep.cc" "tools/tcp.cc"
 }
 
 [c]

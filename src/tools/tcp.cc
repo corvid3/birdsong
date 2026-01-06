@@ -132,19 +132,19 @@ TCPSocket::connect(Runtime&, unsigned short port, uint32_t address) -> Connect
 }
 
 auto
-TCPSocket::recv(std::span<std::byte> buffer) -> Recv
+TCPSocket::read(std::span<std::byte> buffer) -> Read
 {
-  return Recv(*this, buffer);
+  return Read(*this, buffer);
 }
 
 auto
-TCPSocket::send(std::span<std::byte const> buffer) -> Send
+TCPSocket::write(std::span<std::byte const> buffer) -> Write
 {
-  return Send(*this, buffer);
+  return Write(*this, buffer);
 }
 
 void
-TCPSocket::Recv::await_suspend(std::coroutine_handle<> handle)
+TCPSocket::Read::await_suspend(std::coroutine_handle<> handle)
 {
   Runtime& rt = basic_handle_from_void(handle).promise().runtime;
   rt.get_atomic_data().reactor.insert(
@@ -152,7 +152,7 @@ TCPSocket::Recv::await_suspend(std::coroutine_handle<> handle)
 }
 
 std::expected<unsigned, unsigned>
-TCPSocket::Recv::await_resume()
+TCPSocket::Read::await_resume()
 {
   unsigned val = ::recv(socket.m_fd, buf.data(), buf.size(), 0);
 
@@ -163,7 +163,7 @@ TCPSocket::Recv::await_resume()
 }
 
 void
-TCPSocket::Send::await_suspend(std::coroutine_handle<> handle)
+TCPSocket::Write::await_suspend(std::coroutine_handle<> handle)
 {
   Runtime& rt = basic_handle_from_void(handle).promise().runtime;
   rt.get_atomic_data().reactor.insert(
@@ -171,9 +171,10 @@ TCPSocket::Send::await_suspend(std::coroutine_handle<> handle)
 }
 
 std::expected<unsigned, unsigned>
-TCPSocket::Send::await_resume()
+TCPSocket::Write::await_resume()
 {
-  unsigned val = ::send(socket.m_fd, buf.data(), buf.size(), 0);
+  /* SIGPIPE is weird and ugly. don't send it. */
+  unsigned val = ::send(socket.m_fd, buf.data(), buf.size(), MSG_NOSIGNAL);
 
   if (val == -1u)
     return std::unexpected(errno);

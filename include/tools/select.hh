@@ -4,7 +4,6 @@
 #include <coroutine>
 #include <functional>
 #include <list>
-#include <memory>
 
 #include "../common.hh"
 #include "../scheduler.hh"
