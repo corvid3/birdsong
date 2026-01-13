@@ -22,6 +22,7 @@ sources = {
 	"runtime.cc"
 	"reactor.cc"
 	"thread_queue.cc"
+	"net.cc"
 
 	"tools/mutex.cc" "tools/token.cc"
 	"tools/sleep.cc" "tools/tcp.cc"

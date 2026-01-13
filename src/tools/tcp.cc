@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <asm-generic/socket.h>
+#include <compare>
 #include <coroutine>
 #include <cstring>
 #include <expected>
@@ -93,16 +94,21 @@ std::optional<TCPSocket>
 TCPListener::AcceptAwaiter::await_resume()
 {
   int incoming_fd;
+  struct sockaddr_in addr;
+  socklen_t size = sizeof(addr);
 
-  if ((incoming_fd = ::accept(listener.m_fd, NULL, NULL)) == -1)
+  if ((incoming_fd = ::accept(listener.m_fd, (struct sockaddr*)&addr, &size)) ==
+      -1)
     return std::nullopt;
   setnonblock(incoming_fd);
 
-  return TCPSocket(incoming_fd);
+  return TCPSocket(incoming_fd,
+                   IPAddr(ntohl(addr.sin_addr.s_addr), ntohs(addr.sin_port)));
 }
 
-TCPSocket::TCPSocket(unsigned fd)
-  : m_fd(fd) {};
+TCPSocket::TCPSocket(unsigned fd, IPAddr addr)
+  : m_fd(fd)
+  , m_addr(addr) {};
 
 TCPSocket::~TCPSocket()
 {
@@ -111,8 +117,9 @@ TCPSocket::~TCPSocket()
 }
 
 TCPSocket::TCPSocket(TCPSocket&& rhs)
+  : m_fd(rhs.m_fd)
+  , m_addr(rhs.m_addr)
 {
-  this->m_fd = rhs.m_fd;
   rhs.m_fd = -1u;
 }
 
@@ -138,6 +145,12 @@ auto
 TCPSocket::write(std::span<std::byte const> buffer) -> Write
 {
   return Write(*this, buffer);
+}
+
+IPAddr const&
+TCPSocket::addr() const
+{
+  return m_addr;
 }
 
 bool
@@ -232,5 +245,6 @@ TCPSocket::Connect::await_resume()
 {
   if (m_fd == -1u)
     return std::nullopt;
-  return TCPSocket(m_fd);
+
+  return TCPSocket(m_fd, IPAddr(m_addr, m_port));
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <compare>
 #include <coroutine>
 #include <cstddef>
 #include <expected>
@@ -9,17 +10,13 @@
 #include "../common.hh"
 #include "../coro.hh"
 #include "../io.hh"
+#include "../net.hh"
 
 /* im _not_ trying to build a cross-platform networking
  * library here, so some of the internal posix networking
  * datatypes might leak out. */
 
 namespace birdsong {
-
-struct SockOptions
-{
-  unsigned reuseaddr;
-};
 
 class TCPSocket
 {
@@ -68,7 +65,7 @@ class TCPSocket
   };
 
 public:
-  TCPSocket(unsigned fd);
+  TCPSocket(unsigned fd, IPAddr addr);
   ~TCPSocket();
 
   TCPSocket(const TCPSocket&) = delete;
@@ -81,9 +78,11 @@ public:
 
   Read read(std::span<std::byte> buffer);
   Write write(std::span<std::byte const> buffer);
+  IPAddr const& addr() const;
 
 private:
   unsigned m_fd = -1u;
+  IPAddr m_addr;
 };
 
 class TCPListener
