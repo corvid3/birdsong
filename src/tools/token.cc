@@ -44,7 +44,7 @@ Token::await_suspend(std::coroutine_handle<> handle)
       return false;
 
     in.waiting.push_back(
-      basic_handle_from_void(handle).promise().runtime.create_waker());
+      basic_handle_from_void(handle).promise().runtime->create_waker());
 
     this->m_waker = --in.waiting.end();
 

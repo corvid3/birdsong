@@ -20,9 +20,8 @@ class Runtime;
 class PromiseBase
 {
 public:
-  PromiseBase(Runtime& runtime)
-    : handle(std::coroutine_handle<PromiseBase>::from_promise(*this))
-    , runtime(runtime) {};
+  PromiseBase()
+    : handle(std::coroutine_handle<PromiseBase>::from_promise(*this)) {};
 
   static std::coroutine_handle<PromiseBase> handle_from_void(
     std::coroutine_handle<> const& handle);
@@ -42,7 +41,7 @@ public:
 
   std::coroutine_handle<PromiseBase> handle;
   std::exception_ptr exception = nullptr;
-  Runtime& runtime;
+  Runtime* runtime = nullptr;
 
   /* parent coroutine promise */
   PromiseBase* parent = nullptr;
@@ -108,17 +107,11 @@ public:
 
   struct promise_type : PromiseBase
   {
-    promise_type(Runtime& runtime, auto const&...)
-      : PromiseBase(runtime) {};
-
-    /* workaround for non-static lambdas (ignores this argument) */
-    promise_type(auto const&, Runtime& runtime, auto const&...)
-      : PromiseBase(runtime) {};
-
     Coro get_return_object() &
     {
       return Coro(BasicHandle::from_promise(*this));
     }
+
     void return_value(T&& in) { retval.emplace(std::move(in)); }
     std::optional<T> retval;
   };

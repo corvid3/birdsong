@@ -27,14 +27,15 @@ CoroBase::update_task_suspend(BasicHandle inside, BasicHandle outside)
   /* grab the current task handle, and set its promise to be that of
    * the lower coro promise. this will cause the lower coro
    * to be executed when the task is executed next */
-  auto& runtime = outside.promise().runtime;
-  runtime.acquire()->get_this_thread_data().m_currentTask->acquire()->handle =
+  auto runtime = outside.promise().runtime;
+  runtime->acquire()->get_this_thread_data().m_currentTask->acquire()->handle =
     inside;
 
   /* update the lower coro promise's parent to point to the upper promise */
   inside.promise().parent = &outside.promise();
+  inside.promise().runtime = outside.promise().runtime;
   /* push the task back onto the queue */
-  runtime.create_waker().wake();
+  runtime->create_waker().wake();
 }
 
 void
@@ -42,7 +43,7 @@ CoroBase::update_task_resume(BasicHandle inside, BasicHandle outside)
 {
   if (outside)
     inside.promise()
-      .runtime.acquire()
+      .runtime->acquire()
       ->get_this_thread_data()
       .m_currentTask->acquire()
       ->handle = PromiseBase::handle_from_void(outside);
@@ -87,8 +88,8 @@ PromiseBase::final_kill::await_suspend(std::coroutine_handle<> handle) noexcept
   PromiseBase& prom = basic_handle_from_void(handle).promise();
 
   if (prom.parent) {
-    prom.runtime.current_task().acquire()->handle = prom.parent->handle;
-    prom.runtime.create_waker().wake();
+    prom.runtime->current_task().acquire()->handle = prom.parent->handle;
+    prom.runtime->create_waker().wake();
   }
 }
 

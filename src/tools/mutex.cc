@@ -1,7 +1,7 @@
 #include <atomic>
 #include <print>
 
-#include "priv_runtime.hh"
+#include "runtime.hh"
 #include "thread_queue.hh"
 #include "tools/mutex.hh"
 
@@ -66,10 +66,10 @@ AsyncMutex::LockAwaitable::await_ready()
 void
 AsyncMutex::LockAwaitable::await_suspend(std::coroutine_handle<> handle)
 {
-  Runtime& runtime = basic_handle_from_void(handle).promise().runtime;
+  auto runtime = basic_handle_from_void(handle).promise().runtime;
 
   mutex.m_queueMutex.lock();
-  mutex.waiting.push(runtime.create_waker());
+  mutex.waiting.push(runtime->create_waker());
   mutex.m_queueMutex.unlock();
 }
 

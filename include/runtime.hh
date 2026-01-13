@@ -5,11 +5,26 @@
 #include <utility>
 
 #include "atomic.hh"
+#include "coro.hh"
 #include "reactor.hh"
 #include "task.hh"
 #include "thread_queue.hh"
 
 namespace birdsong {
+
+struct GetRuntime
+{
+  bool await_ready() { return false; }
+
+  bool await_suspend(std::coroutine_handle<> handle)
+  {
+    rt = basic_handle_from_void(handle).promise().runtime;
+    return false;
+  }
+
+  Runtime* await_resume() { return rt; }
+  Runtime* rt;
+};
 
 class Runtime : public Atom
 {
@@ -38,7 +53,7 @@ public:
   /* blockingly runs a coroutine
    * you should use this as your main entry point
    */
-  void run(std::function<Coro<>(Runtime&)>);
+  void run(std::function<Coro<>()>);
 
   template<typename T>
   JoinHandle<T> spawn(Coro<T>&& coro)
@@ -63,12 +78,12 @@ public:
     /* move it to the heap */
     auto fnp = new decltype(std::function{ lambda })(std::move(lambda));
 
-    return spawn([](Runtime& rt, auto* ptr) -> decltype(std::function{
-                                              lambda })::result_type {
-      auto&& val = co_await (*ptr)(rt);
-      delete ptr;
-      co_return std::move(val);
-    }(*this, fnp));
+    return spawn(
+      [](auto* ptr) -> decltype(std::function{ lambda })::result_type {
+        auto&& val = co_await (*ptr)();
+        delete ptr;
+        co_return std::move(val);
+      }(fnp));
   }
 
   // template<typename T>
@@ -91,6 +106,7 @@ private:
   template<typename T>
   Waker spawn_internal(CoroBase coro)
   {
+    coro.get_handle().promise().runtime = this;
     auto ptr =
       std::unique_ptr<Task>(new Task(*this, (Coro<>&&)std::move(coro)));
     return Waker(*this, std::move(ptr));

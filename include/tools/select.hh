@@ -19,27 +19,29 @@ SelectCase(T&& in, L const& lambda)
   return std::pair<decltype(std::forward<T>(in)), L>(std::forward<T>(in),
                                                      lambda);
 }
+
 template<typename... Cases>
 Coro<Empty>
-Select(Runtime& rt, Cases&&... cases)
+Select(Cases&&... cases)
 {
-  auto waker = rt.create_waker();
+  auto rt = co_await GetRuntime();
+  auto waker = rt->create_waker();
   Mutex finishMutex, listMutex;
   std::list<JoinHandleBase> join_handles;
 
   listMutex.lock();
   (
     [&](Cases&& in) {
-      auto handle = rt.spawn_lambda([&](Runtime& rt) mutable -> Coro<> {
+      auto handle = rt->spawn_lambda([&]() mutable -> Coro<> {
         auto out = co_await in.first;
 
         /* whoevers first to the finish line wins! */
         if (!finishMutex.try_lock()) {
           listMutex.lock();
           for (auto& handle : join_handles)
-            if (handle.get_task() != rt.current_task())
+            if (handle.get_task() != rt->current_task())
               handle.kill();
-          co_await in.second(rt, std::move(out));
+          co_await in.second(std::move(out));
           waker.wake();
         }
 

@@ -60,8 +60,8 @@ bool
 Sleep::await_suspend(std::coroutine_handle<> handle)
 {
   return this->data->waker.with_lock([&](Data::Data2& in) {
-    Runtime& rt = basic_handle_from_void(handle).promise().runtime;
-    Waker waker = rt.create_waker();
+    auto rt = basic_handle_from_void(handle).promise().runtime;
+    Waker waker = rt->create_waker();
     if (in.done)
       return false;
     else

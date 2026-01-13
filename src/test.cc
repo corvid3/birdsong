@@ -23,38 +23,21 @@ using namespace birdsong;
 
 Token token;
 
-Coro<>
-some_task(Runtime& rt, Channel<int>::Send send)
-{
-  send.send(0);
-  co_await Select(rt, SelectCase(token, Token::SelectCoro));
-  co_return {};
-}
-
 int
 main()
 {
 
   std::thread thread([&]() {
-    Runtime(std::unique_ptr<Reactor>(new PollReactor))
-      .run([&](Runtime& rt) -> Coro<> {
-        auto [tx, rx] = Channel<int>::Create();
-        auto task = rt.spawn(some_task(rt, std::move(tx)));
-        co_await Select(rt,
-                        SelectCase(token, Token::SelectCoro),
-                        SelectCase(
-                          [](Runtime&) -> Coro<> {
-                            co_await Sleep(2000);
-                            co_return {};
-                          }(rt),
-                          [&](Runtime&, Empty) -> Coro<> { co_return {}; }));
+    Runtime(std::unique_ptr<Reactor>(new PollReactor)).run([&]() -> Coro<> {
+      printf("test\n");
+      co_await Select(
+        SelectCase(Sleep(500), [](Empty) -> Coro<> { co_return {}; }));
+      printf("test\n");
+      token.go();
+      printf("test\n");
 
-        token.go();
-        task.kill();
-        // co_await task;
-
-        co_return {};
-      });
+      co_return {};
+    });
   });
 
   // getchar();

@@ -65,7 +65,7 @@ Task::kill()
 {
   auto transaction = acquire();
   transaction->state.load()->killswitch = true;
-  Runtime& rt = transaction->handle.promise().runtime;
+  auto rt = transaction->handle.promise().runtime;
 
   // if (transaction->handle) {
   //   auto handle = transaction->handle;
@@ -74,7 +74,7 @@ Task::kill()
   //   //   handle.destroy();
   // }
 
-  rt.acquire()->m_aliveTasks--;
+  rt->acquire()->m_aliveTasks--;
 }
 
 Task::~Task()

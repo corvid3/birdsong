@@ -25,7 +25,7 @@ Runtime::Runtime(std::unique_ptr<Reactor> reactor, unsigned num_threads)
 Runtime::~Runtime() = default;
 
 void
-Runtime::run(std::function<Coro<>(Runtime&)> coro)
+Runtime::run(std::function<Coro<>()> coro)
 {
   if (acquire()->m_running)
     std::cerr << "attempting to start multiple run loops on a single "
@@ -34,7 +34,7 @@ Runtime::run(std::function<Coro<>(Runtime&)> coro)
 
   acquire()->m_running = true;
 
-  spawn_internal<Empty>(coro(*this)).wake();
+  spawn_internal<Empty>(coro()).wake();
 
   while (acquire()->m_aliveTasks != 0) {
     get_reactor().poll();

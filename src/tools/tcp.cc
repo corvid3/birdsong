@@ -84,10 +84,10 @@ TCPListener::AcceptAwaiter::await_ready()
 void
 TCPListener::AcceptAwaiter::await_suspend(std::coroutine_handle<> handle)
 {
-  Runtime& rt = basic_handle_from_void(handle).promise().runtime;
-  Reactor& reactor = rt.get_reactor();
+  auto rt = basic_handle_from_void(handle).promise().runtime;
+  Reactor& reactor = rt->get_reactor();
   reactor.insert(
-    Reactor::FDWait{ rt.create_waker(), listener.m_fd, { true, false } });
+    Reactor::FDWait{ rt->create_waker(), listener.m_fd, { true, false } });
 }
 
 std::optional<TCPSocket>
@@ -165,8 +165,9 @@ TCPSocket::Read::await_ready()
 void
 TCPSocket::Read::await_suspend(std::coroutine_handle<> handle)
 {
-  Runtime& rt = basic_handle_from_void(handle).promise().runtime;
-  rt.get_reactor().insert({ rt.create_waker(), socket.m_fd, { true, false } });
+  auto rt = basic_handle_from_void(handle).promise().runtime;
+  rt->get_reactor().insert(
+    { rt->create_waker(), socket.m_fd, { true, false } });
 }
 
 std::expected<unsigned, unsigned>
@@ -192,8 +193,9 @@ TCPSocket::Write::await_ready()
 void
 TCPSocket::Write::await_suspend(std::coroutine_handle<> handle)
 {
-  Runtime& rt = basic_handle_from_void(handle).promise().runtime;
-  rt.get_reactor().insert({ rt.create_waker(), socket.m_fd, { false, true } });
+  auto rt = basic_handle_from_void(handle).promise().runtime;
+  rt->get_reactor().insert(
+    { rt->create_waker(), socket.m_fd, { false, true } });
 }
 
 std::expected<unsigned, unsigned>
@@ -236,8 +238,8 @@ TCPSocket::Connect::await_ready()
 void
 TCPSocket::Connect::await_suspend(std::coroutine_handle<> handle)
 {
-  Runtime& rt = basic_handle_from_void(handle).promise().runtime;
-  rt.get_reactor().insert({ rt.create_waker(), m_fd, { false, true } });
+  auto rt = basic_handle_from_void(handle).promise().runtime;
+  rt->get_reactor().insert({ rt->create_waker(), m_fd, { false, true } });
 }
 
 std::optional<TCPSocket>
