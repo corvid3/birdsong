@@ -1,6 +1,6 @@
 #pragma once
 
-#include <any>
+#include <cassert>
 #include <concepts>
 #include <coroutine>
 #include <exception>
@@ -60,39 +60,52 @@ BasicHandle inline basic_handle_from_void(std::coroutine_handle<> handle)
 class CoroBase
 {
 public:
-  CoroBase(PromiseBase& promise)
-    : m_promise(promise) {};
+  CoroBase(BasicHandle handle)
+    : m_inside(handle) {};
   ~CoroBase();
 
-  PromiseBase& get_promise() { return m_promise; }
-
-protected:
-  PromiseBase& m_promise;
-};
-
-/* stupid jank to hide a method */
-class CoroAwaiterImpl
-{
-  struct AwaiterImpl
+  CoroBase(const CoroBase&) = delete;
+  CoroBase& operator=(const CoroBase&) = delete;
+  CoroBase(CoroBase&& rhs) noexcept
+    : m_inside(rhs.m_inside)
+    , m_outside(rhs.m_outside)
   {
-  public:
-    /* handles the suspension code for
-     * managing the call stack in the scheduler */
-    void update_task_suspend(BasicHandle inside, BasicHandle outside);
-
-    /* handles the resumation code for managing
-     * the call stack in the scheduler */
-    void update_task_resume(BasicHandle inside, BasicHandle outside);
+    rhs.m_inside = nullptr;
+    rhs.m_outside = nullptr;
   };
 
-  template<typename T>
-  friend class Coro;
+  CoroBase& operator=(CoroBase&&) = delete;
+
+  BasicHandle get_handle() { return m_inside; }
+
+protected:
+  /* handles the suspension code for
+   * managing the call stack in the scheduler */
+  void update_task_suspend(BasicHandle inside, BasicHandle outside);
+
+  /* handles the resumation code for managing
+   * the call stack in the scheduler */
+  void update_task_resume(BasicHandle inside, BasicHandle outside);
+
+  BasicHandle m_inside;
+  BasicHandle m_outside = nullptr;
 };
 
 template<typename T = Empty>
 class Coro : public CoroBase
 {
 public:
+  Coro(BasicHandle handle)
+    : CoroBase(handle)
+  {
+    assert(m_inside);
+  };
+
+  Coro(const Coro&) = delete;
+  Coro& operator=(const Coro&) = delete;
+  Coro(Coro&&) = default;
+  Coro& operator=(Coro&&) = delete;
+
   struct promise_type : PromiseBase
   {
     promise_type(Runtime& runtime, auto const&...)
@@ -102,63 +115,39 @@ public:
     promise_type(auto const&, Runtime& runtime, auto const&...)
       : PromiseBase(runtime) {};
 
-    Coro get_return_object() & { return Coro(*this); }
+    Coro get_return_object() &
+    {
+      return Coro(BasicHandle::from_promise(*this));
+    }
     void return_value(T&& in) { retval.emplace(std::move(in)); }
     std::optional<T> retval;
   };
 
+  bool await_ready() { return false; }
+
   /* Coro awaits act as cooperative scheduling points in the runtime,
    * after an await is scheduled, we pause the current task
    */
-  struct Awaiter
-    : AwaitableBase
-    , CoroAwaiterImpl::AwaiterImpl
+  void await_suspend(std::coroutine_handle<> outside)
   {
-    Awaiter(std::coroutine_handle<PromiseBase> inside)
-      : inside(inside) {};
+    m_outside = basic_handle_from_void(outside);
 
-    void await_suspend(std::coroutine_handle<> outside)
-    {
-      this->outside = basic_handle_from_void(outside);
-
-      /* update the tasks in the scheduler to manage the call chain */
-      update_task_suspend(inside, this->outside);
-    }
-
-    T await_resume()
-    {
-      update_task_resume(inside, outside);
-      /* update the tasks in the scheduler to manage the call chain */
-      promise_type& promise = static_cast<promise_type&>(inside.promise());
-
-      if (!promise.retval.has_value())
-        std::cerr << ("promise is NOT fulfilled despite coroutine awaiter "
-                      "resuming! panicking!"),
-          std::terminate();
-
-      return std::move(*promise.retval);
-    }
-
-  private:
-    std::coroutine_handle<PromiseBase> inside;
-    std::coroutine_handle<PromiseBase> outside{};
-  };
-
-  Coro(promise_type& promise)
-    : CoroBase(promise) {};
-
-  Awaiter operator co_await() const noexcept
-  {
-    return Awaiter(std::coroutine_handle<PromiseBase>::from_promise(m_promise));
+    /* update the tasks in the scheduler to manage the call chain */
+    update_task_suspend(m_inside, m_outside);
   }
 
-  std::optional<T>& poll() { return get_concretized_handle().promise().future; }
-
-private:
-  std::coroutine_handle<promise_type> get_concretized_handle()
+  T await_resume()
   {
-    return std::coroutine_handle<promise_type>::from_promise(
-      dynamic_cast<promise_type&>(m_promise));
+    update_task_resume(m_inside, m_outside);
+    /* update the tasks in the scheduler to manage the call chain */
+    promise_type& promise = static_cast<promise_type&>(m_inside.promise());
+
+    if (!promise.retval.has_value())
+      std::cerr << ("promise is NOT fulfilled despite coroutine awaiter "
+                    "resuming! panicking!"),
+        std::terminate();
+
+    return std::move(*promise.retval);
   }
 };
 

@@ -1,38 +1,78 @@
-#include <optional>
+#include <atomic>
+#include <condition_variable>
 #include <thread>
 
 #include "common.hh"
 #include "coro.hh"
-#include "priv_runtime.hh"
-#include "scheduler.hh"
+#include "runtime.hh"
 #include "task.hh"
 #include "tools/sleep.hh"
 
 using namespace birdsong;
 
 Sleep::Sleep(unsigned ms)
-  : waker_ptr(new MutexWrapper(std::optional<Waker>(std::nullopt)))
 {
+  std::unique_ptr<Data> ptr(new Data);
+  data = ptr.get();
+  data->ms = ms;
+
   /* just spawn an OS thread. i'm lazy. sleep awaits aren't
    * too common anyways, so the cost is minimal.
    */
-  std::thread(
-    [ptr = this->waker_ptr](unsigned ms) mutable {
-      std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-      ptr->with_lock([](auto& in) mutable {
-        if (in)
-          in->wake();
-      });
+  sleep_thread = std::thread(
+    [](std::unique_ptr<Data> data) {
+      while (true) {
+        std::unique_lock lock(data->flag_mutex);
+
+        if (data->deleting)
+          break;
+
+        /* if the flag was triggered instead of running out of time,
+         * continue the loop */
+        if (data->flag.wait_for(lock,
+                                std::chrono::milliseconds(
+                                  data->ms.load(std::memory_order::acquire))) ==
+            std::cv_status::no_timeout)
+          continue;
+
+        data->waker.with_lock([](Data::Data2& in) {
+          in.done = true;
+          if (in.waker)
+            in.waker->wake();
+        });
+
+        /* when we time out, wait on the flag again for when
+         * the Sleep is .reset() or Data gets its destructor called */
+        data->flag.wait(lock);
+      }
     },
-    ms)
-    .detach();
+    std::move(ptr));
 };
 
-void
+Sleep::~Sleep()
+{
+  data->deleting = true;
+  data->flag.notify_all();
+  sleep_thread.join();
+}
+
+bool
 Sleep::await_suspend(std::coroutine_handle<> handle)
 {
-  Runtime& rt = basic_handle_from_void(handle).promise().runtime;
-  Waker waker = rt.create_waker();
-  this->waker_ptr->with_lock(
-    [&](auto& in) mutable { in.emplace(std::move(waker)); });
+  return this->data->waker.with_lock([&](Data::Data2& in) {
+    Runtime& rt = basic_handle_from_void(handle).promise().runtime;
+    Waker waker = rt.create_waker();
+    if (in.done)
+      return false;
+    else
+      in.waker.emplace(std::move(waker));
+    return true;
+  });
+}
+
+void
+Sleep::reset(unsigned ms)
+{
+  this->data->ms = ms;
+  this->data->flag.notify_one();
 }

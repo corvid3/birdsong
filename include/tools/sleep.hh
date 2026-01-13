@@ -2,7 +2,9 @@
 
 #include "../common.hh"
 #include "../task.hh"
+#include <condition_variable>
 #include <memory>
+#include <thread>
 
 namespace birdsong {
 
@@ -10,12 +12,35 @@ namespace birdsong {
 class Sleep : public AwaitableBase
 {
 public:
-  Sleep(unsigned ms);
+  Sleep(const Sleep&) = delete;
+  Sleep(Sleep&&) = delete;
+  Sleep& operator=(const Sleep&) = delete;
+  Sleep& operator=(Sleep&&) = delete;
 
-  void await_suspend(std::coroutine_handle<>);
+  Sleep(unsigned ms);
+  ~Sleep();
+
+  void reset(unsigned ms);
+  bool await_suspend(std::coroutine_handle<>);
 
 private:
-  std::shared_ptr<MutexWrapper<std::optional<Waker>>> waker_ptr;
+  struct Data
+  {
+    struct Data2
+    {
+      std::optional<Waker> waker;
+      bool done{ false };
+    };
+
+    MutexWrapper<Data2> waker;
+    std::mutex flag_mutex;
+    std::condition_variable flag;
+    std::atomic<unsigned> ms;
+    bool deleting{ false };
+  };
+
+  std::thread sleep_thread;
+  Data* data;
 };
 
 };

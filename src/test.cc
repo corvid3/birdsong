@@ -11,7 +11,8 @@
 #include "atomic.hh"
 #include "coro.hh"
 #include "io.hh"
-#include "scheduler.hh"
+#include "reactor.hh"
+#include "runtime.hh"
 #include "tools/channel.hh"
 #include "tools/select.hh"
 #include "tools/sleep.hh"
@@ -19,20 +20,46 @@
 #include "tools/token.hh"
 
 using namespace birdsong;
+
+Token token;
+
+Coro<>
+some_task(Runtime& rt, Channel<int>::Send send)
+{
+  send.send(0);
+  co_await Select(rt, SelectCase(token, Token::SelectCoro));
+  co_return {};
+}
+
 int
 main()
 {
-  Runtime().run([](Runtime& rt) -> Coro<> {
-    try {
-      co_await [&](Runtime& rt) -> Coro<> {
-        throw std::runtime_error("test");
+
+  std::thread thread([&]() {
+    Runtime(std::unique_ptr<Reactor>(new PollReactor))
+      .run([&](Runtime& rt) -> Coro<> {
+        auto [tx, rx] = Channel<int>::Create();
+        auto task = rt.spawn(some_task(rt, std::move(tx)));
+        co_await Select(rt,
+                        SelectCase(token, Token::SelectCoro),
+                        SelectCase(
+                          [](Runtime&) -> Coro<> {
+                            co_await Sleep(2000);
+                            co_return {};
+                          }(rt),
+                          [&](Runtime&, Empty) -> Coro<> { co_return {}; }));
+
+        token.go();
+        task.kill();
+        // co_await task;
+
         co_return {};
-      }(rt);
-    } catch (std::exception const& e) {
-      std::println("caught {}", e.what());
-    };
-    co_return {};
+      });
   });
+
+  // getchar();
+  // tok.go();
+  thread.join();
 }
 
 /* *** */

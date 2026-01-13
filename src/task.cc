@@ -1,9 +1,8 @@
 #include <memory>
-#include <print>
 #include <utility>
 
 #include "priv_runtime.hh"
-#include "scheduler.hh"
+#include "runtime.hh"
 #include "task.hh"
 
 using namespace birdsong;
@@ -53,12 +52,12 @@ Waker::wake()
 
 static std::atomic<int> m{ 0 };
 
-Task::Task(Runtime&, PromiseBase* promise)
-  : m_data{ std::coroutine_handle<PromiseBase>::from_promise(*promise),
-            std::make_shared<SharedTaskStateBase>(*this) }
+Task::Task(Runtime& rt, Coro<> coro)
+  : m_data{ coro.get_handle(),
+            std::make_shared<SharedTaskState>(*this, std::move(coro)) }
 {
   tag = m++;
-  promise->runtime.get_atomic_data().m_aliveTasks++;
+  rt.acquire()->m_aliveTasks++;
 };
 
 void
@@ -66,10 +65,16 @@ Task::kill()
 {
   auto transaction = acquire();
   transaction->state.load()->killswitch = true;
+  Runtime& rt = transaction->handle.promise().runtime;
 
-  transaction->handle.promise().runtime.get_atomic_data().m_aliveTasks--;
-  if (transaction->handle)
-    transaction->handle.destroy();
+  // if (transaction->handle) {
+  //   auto handle = transaction->handle;
+  //   transaction->handle = nullptr;
+  //   // if (not handle.done())
+  //   //   handle.destroy();
+  // }
+
+  rt.acquire()->m_aliveTasks--;
 }
 
 Task::~Task()
@@ -87,7 +92,8 @@ bool
 JoinHandleBase::await_ready()
 {
   m_state.load()->mutex.lock();
-  return m_state.load()->killswitch;
+  ready = m_state.load()->killswitch;
+  return ready;
 }
 
 void
@@ -104,4 +110,6 @@ JoinHandleBase::kill()
   if (not m_state.load()->killswitch)
     m_state.load()->dependent.kill();
   m_state.load()->mutex.unlock();
+
+  m_state.load().reset();
 }

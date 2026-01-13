@@ -12,7 +12,8 @@ Mutex::lock()
 {
   unsigned this_thread_id = ThreadQueue::GetThisThreadID();
   if (m_threadLocked == this_thread_id)
-    std::println("deadlock detected"), std::terminate();
+    std::println("deadlock detected. thread: {}", m_threadLocked),
+      std::terminate();
 
   while (m_flag.test_and_set(std::memory_order_acquire))
     m_flag.wait(true);
@@ -25,7 +26,8 @@ Mutex::try_lock()
 {
   unsigned this_thread_id = ThreadQueue::GetThisThreadID();
   if (m_threadLocked == this_thread_id)
-    std::println("deadlock detected"), std::terminate();
+    std::println("deadlock detected. thread: {}", m_threadLocked),
+      std::terminate();
 
   bool success = m_flag.test_and_set(std::memory_order_acq_rel);
   if (success)
@@ -37,6 +39,10 @@ Mutex::try_lock()
 void
 Mutex::unlock()
 {
+  unsigned this_thread_id = ThreadQueue::GetThisThreadID();
+  if (m_threadLocked != this_thread_id)
+    std::println("unlock when not owning mutex. thread: {}", this_thread_id),
+      std::terminate();
   m_threadLocked = -2u;
   m_flag.clear(std::memory_order_release);
   m_flag.notify_one();

@@ -1,11 +1,10 @@
 #pragma once
 
 #include <coroutine>
-#include <functional>
 #include <memory>
 
 #include "../common.hh"
-#include "../scheduler.hh"
+#include "../runtime.hh"
 #include "../task.hh"
 
 namespace birdsong {
@@ -22,7 +21,7 @@ class Token : public AwaitableBase
   struct Impl;
 
 public:
-  auto static constexpr SelectCoro = [](Runtime&, Empty) -> Coro<> {
+  auto static constexpr SelectCoro = [](Runtime&, Empty) static -> Coro<> {
     co_return {};
   };
 

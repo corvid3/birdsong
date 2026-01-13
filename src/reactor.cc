@@ -1,15 +1,14 @@
 #include <cstring>
-#include <optional>
 #include <poll.h>
 #include <sys/poll.h>
 #include <sys/resource.h>
 #include <vector>
 
-#include "priv_reactor.hh"
+#include "reactor.hh"
 
 using namespace birdsong;
 
-struct Reactor::Data
+struct PollReactor::Data
 {
   std::vector<pollfd> pollfds;
   std::vector<std::optional<FDWait>> wakers;
@@ -73,25 +72,19 @@ struct Reactor::Data
   };
 };
 
-Reactor::Reactor()
+PollReactor::PollReactor()
   : m_data(new Data) {};
-Reactor::~Reactor() {}
-
-bool
-Reactor::anything_to_poll()
-{
-  return acquire()->used > 0;
-}
+PollReactor::~PollReactor() {}
 
 void
-Reactor::insert(FDWait wait)
+PollReactor::insert(FDWait wait)
 {
   auto trans = acquire();
   trans->insert_at(trans->allocate_pfd(), std::move(wait));
 }
 
 void
-Reactor::poll(bool)
+PollReactor::poll()
 {
   auto trans = acquire();
   auto num_updated = 0;

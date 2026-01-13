@@ -1,9 +1,9 @@
-#include "coro.hh"
 #include <coroutine>
 #include <exception>
 
+#include "coro.hh"
 #include "priv_runtime.hh"
-#include "scheduler.hh"
+#include "runtime.hh"
 
 using namespace birdsong;
 
@@ -22,8 +22,7 @@ AwaitableBase::await_resume()
 };
 
 void
-CoroAwaiterImpl::AwaiterImpl::update_task_suspend(BasicHandle inside,
-                                                  BasicHandle outside)
+CoroBase::update_task_suspend(BasicHandle inside, BasicHandle outside)
 {
   /* grab the current task handle, and set its promise to be that of
    * the lower coro promise. this will cause the lower coro
@@ -39,8 +38,7 @@ CoroAwaiterImpl::AwaiterImpl::update_task_suspend(BasicHandle inside,
 }
 
 void
-CoroAwaiterImpl::AwaiterImpl::update_task_resume(BasicHandle inside,
-                                                 BasicHandle outside)
+CoroBase::update_task_resume(BasicHandle inside, BasicHandle outside)
 {
   if (outside)
     inside.promise()
@@ -109,6 +107,6 @@ PromiseBase::final_suspend() noexcept -> final_kill
 
 CoroBase::~CoroBase()
 {
-  if (m_promise.handle && m_promise.handle.done())
-    m_promise.handle.destroy();
+  if (m_inside != nullptr)
+    m_inside.destroy();
 }

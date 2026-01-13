@@ -49,8 +49,20 @@ public:
     Transaction(Self& db)
       : db(&db) {};
 
-    Self::Data& operator*() { return db->get_data(Key()); }
-    Self::Data* operator->() { return &db->get_data(Key()); }
+    typename Self::Data& operator*() const { return db->get_data(Key()); }
+    typename Self::Data* operator->() const { return &db->get_data(Key()); }
+
+    /* drops this transaction before destruction.
+     * use this sparingly, it can result in some pretty unreasonable looking
+     * code, but it is a necessary evil for certain patterns.
+     */
+    void drop()
+    {
+      if (db) {
+        db->m_mutex.unlock();
+        db = nullptr;
+      }
+    };
 
     ~Transaction()
     {
@@ -86,11 +98,16 @@ private:
   Mutex mutable m_mutex;
 };
 
+/* TODO: async Atomable class */
+
 /* simple acid wrapper around a type */
 template<typename T>
 class AtomWrapper : public Atom
 {
 public:
+  AtomWrapper(T in)
+    : m_data(std::move(in)) {};
+
   using Data = T;
   Data& get_data(Key) const { return m_data; };
 

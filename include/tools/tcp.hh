@@ -16,6 +16,11 @@
 
 namespace birdsong {
 
+struct SockOptions
+{
+  unsigned reuseaddr;
+};
+
 class TCPSocket
 {
   struct Read : AwaitableBase
@@ -24,6 +29,7 @@ class TCPSocket
       : socket(socket)
       , buf(buf) {};
 
+    bool await_ready();
     void await_suspend(std::coroutine_handle<>);
     std::expected<unsigned, unsigned> await_resume();
 
@@ -37,6 +43,7 @@ class TCPSocket
       : socket(socket)
       , buf(buf) {};
 
+    bool await_ready();
     void await_suspend(std::coroutine_handle<>);
     IOResult<unsigned> await_resume();
 
@@ -98,13 +105,7 @@ class TCPListener
   };
 
 public:
-  struct Options
-  {
-    bool reuseaddr = false;
-    int max_incoming = 16;
-  };
-
-  TCPListener(unsigned short port, Options const&);
+  TCPListener(unsigned short port, unsigned queue_size = 16);
   ~TCPListener();
 
   /* asynchronously blocks this thread and awaits

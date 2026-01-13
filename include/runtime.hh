@@ -5,26 +5,11 @@
 #include <utility>
 
 #include "atomic.hh"
+#include "reactor.hh"
 #include "task.hh"
 #include "thread_queue.hh"
 
 namespace birdsong {
-
-// template<typename... Ts>
-// class Select
-// {
-// public:
-//   Select();
-
-//   bool await_ready() { return false; }
-//   void await_suspend() {}
-//   OutTuple{};
-
-// private:
-//   std::tuple<Ts...> awaiting;
-// };
-
-class Reactor;
 
 class Runtime : public Atom
 {
@@ -37,7 +22,13 @@ class Runtime : public Atom
   struct Queue;
 
 public:
-  Runtime(unsigned num_threads = 1);
+  struct Config
+  {
+    /* ms between non-blocking poll invocations */
+    unsigned poll_ms_wait = 10;
+  };
+
+  Runtime(std::unique_ptr<Reactor>, unsigned num_threads = 1);
   ~Runtime();
 
   /* thread-safe externally accessable data */
@@ -47,7 +38,7 @@ public:
   /* blockingly runs a coroutine
    * you should use this as your main entry point
    */
-  void run(std::function<CoroBase(Runtime&)>);
+  void run(std::function<Coro<>(Runtime&)>);
 
   template<typename T>
   JoinHandle<T> spawn(Coro<T>&& coro)
@@ -87,7 +78,6 @@ public:
   // }
 
   Data& get_data(Atom::Key) { return *m_data; };
-  AtomicData& get_atomic_data() { return *m_atomicData; };
 
   /* creates a waker from the current threads task
    * panics if called from outside of a runtimes thread */
@@ -95,18 +85,22 @@ public:
   Task& current_task();
   unsigned num_tasks();
 
+  Reactor& get_reactor() { return *m_reactor; }
+
 private:
   template<typename T>
   Waker spawn_internal(CoroBase coro)
   {
-    auto ptr = std::make_unique<TaskSpecified<T>>(*this, &coro.get_promise());
+    auto ptr =
+      std::unique_ptr<Task>(new Task(*this, (Coro<>&&)std::move(coro)));
     return Waker(*this, std::move(ptr));
   }
 
   static void worker(Queue&);
 
   std::unique_ptr<Data> m_data;
-  std::unique_ptr<AtomicData> m_atomicData;
+  std::unique_ptr<Reactor> m_reactor;
+  // std::unique_ptr<AtomicData> m_atomicData;
   ThreadQueue m_threadQueue;
 };
 

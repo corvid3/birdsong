@@ -4,17 +4,17 @@
 #include <memory>
 #include <thread>
 
-#include "priv_reactor.hh"
 #include "priv_runtime.hh"
-#include "scheduler.hh"
+#include "reactor.hh"
+#include "runtime.hh"
 #include "task.hh"
 #include "thread_queue.hh"
 
 using namespace birdsong;
 
-Runtime::Runtime(unsigned num_threads)
+Runtime::Runtime(std::unique_ptr<Reactor> reactor, unsigned num_threads)
   : m_data(new Data)
-  , m_atomicData(new AtomicData)
+  , m_reactor(std::move(reactor))
   , m_threadQueue(num_threads)
 {
   for (unsigned i = 0; i < num_threads; i++) {
@@ -25,19 +25,19 @@ Runtime::Runtime(unsigned num_threads)
 Runtime::~Runtime() = default;
 
 void
-Runtime::run(std::function<CoroBase(Runtime&)> coro)
+Runtime::run(std::function<Coro<>(Runtime&)> coro)
 {
-  if (m_atomicData->m_running)
+  if (acquire()->m_running)
     std::cerr << "attempting to start multiple run loops on a single "
                  "crowroutine runtime\n",
       std::terminate();
 
-  m_atomicData->m_running = true;
+  acquire()->m_running = true;
 
   spawn_internal<Empty>(coro(*this)).wake();
 
-  while (m_atomicData->m_aliveTasks != 0) {
-    m_atomicData->reactor.poll(m_atomicData->m_aliveTasks == 0);
+  while (acquire()->m_aliveTasks != 0) {
+    get_reactor().poll();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 }
@@ -68,5 +68,5 @@ Runtime::current_task()
 unsigned
 Runtime::num_tasks()
 {
-  return m_atomicData->m_aliveTasks;
+  return acquire()->m_aliveTasks;
 }

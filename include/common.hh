@@ -3,6 +3,7 @@
 #include <atomic>
 #include <concepts>
 #include <coroutine>
+#include <type_traits>
 
 namespace birdsong {
 
@@ -69,6 +70,7 @@ class MutexWrapper
 public:
   MutexWrapper() = default;
   MutexWrapper(T in)
+    requires std::move_constructible<T>
     : m_data(std::move(in)) {};
 
   auto with_lock(std::invocable<T&> auto lambda)

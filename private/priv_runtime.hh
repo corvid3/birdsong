@@ -1,12 +1,10 @@
 #pragma once
 
 #include <condition_variable>
-#include <iostream>
 #include <map>
-#include <queue>
 
-#include "priv_reactor.hh"
-#include "scheduler.hh"
+#include "reactor.hh"
+#include "runtime.hh"
 #include "task.hh"
 #include "thread_queue.hh"
 
@@ -29,19 +27,6 @@ struct Runtime::Data
   {
     return m_threadData.at(ThreadQueue::GetThisThreadID());
   };
-};
-
-/* any kind of atomic-by-itself data goes in here,
- * so that the runtime doesn't have to be locked */
-struct Runtime::AtomicData
-{
-  Reactor reactor;
-
-  /* the scheduler will halt until a new task
-   * is potentially added by another thread
-   * if the task queue hits 0 size & there is nothing in the poller */
-  std::condition_variable m_taskAlert;
-  std::mutex m_taskAlertMutex;
 
   /* set to true in the run() method
    * calls std::terminate() if tries to run while another
@@ -51,6 +36,18 @@ struct Runtime::AtomicData
   /* counter incremented/decremented by number of
    * tasks "alive" (not necessarily scheduled) in memory */
   std::atomic<unsigned> m_aliveTasks = 0;
+};
+
+/* any kind of atomic-by-itself data goes in here,
+ * so that the runtime doesn't have to be locked */
+struct Runtime::AtomicData
+{
+
+  /* the scheduler will halt until a new task
+   * is potentially added by another thread
+   * if the task queue hits 0 size & there is nothing in the poller */
+  // std::condition_variable m_taskAlert;
+  // std::mutex m_taskAlertMutex;
 };
 
 }; // namespace birdsong

@@ -45,12 +45,14 @@ private:
   Data task;
 };
 
-struct SharedTaskStateBase
+struct SharedTaskState
 {
-  SharedTaskStateBase(Task& dependent)
-    : dependent(dependent) {};
+  SharedTaskState(Task& dependent, Coro<> entry)
+    : dependent(dependent)
+    , entry_coro(std::move(entry)) {};
 
   Task& dependent;
+  Coro<> entry_coro;
 
   /* any JoinHandles of a task that are co_await'd have
    * the parent task slept and the wakers are added here.
@@ -63,12 +65,6 @@ struct SharedTaskStateBase
   bool killswitch{ false };
 
   Mutex mutex;
-};
-
-template<typename T>
-struct SharedTaskStateRet : public SharedTaskStateBase
-{
-  std::optional<T> retval;
 };
 
 /* TODO: mark if a task is currently being executed by a given
@@ -86,10 +82,10 @@ public:
      * references cannot be rebound, so it must be a pointer
      */
     std::coroutine_handle<PromiseBase> handle;
-    std::atomic<std::shared_ptr<SharedTaskStateBase>> state;
+    std::atomic<std::shared_ptr<SharedTaskState>> state;
   };
 
-  Task(Runtime& rt, PromiseBase* promise);
+  Task(Runtime& rt, Coro<>);
 
   Task(const Task&) = delete;
   Task(Task&&) = delete;
@@ -106,28 +102,6 @@ public:
 
 private:
   Data m_data;
-};
-
-template<typename T>
-class TaskSpecified final : public Task
-{
-public:
-  using Task::Task;
-
-  ~TaskSpecified()
-  {
-    auto transaction = acquire();
-
-    /* if and only if the coroutine promise is the topmost
-     * coroutine frame and the coroutine is done executing,
-     * set the retval on the joinhandle */
-    if (transaction->handle.done() and
-        transaction->handle.promise().parent == nullptr)
-      ((SharedTaskStateRet<T>*)transaction->state.load().get())->retval =
-        std::move(
-          static_cast<Coro<T>::promise_type&>(transaction->handle.promise())
-            .retval);
-  }
 };
 
 class JoinHandleBase
@@ -152,7 +126,8 @@ public:
 
 protected:
   Runtime& rt;
-  std::atomic<std::shared_ptr<SharedTaskStateBase>> m_state;
+  bool ready{ false };
+  std::atomic<std::shared_ptr<SharedTaskState>> m_state;
 };
 
 /* ugh i can clean this up later.
@@ -170,21 +145,25 @@ public:
 
   T await_resume()
   {
-    if (!ready)
-      get_state().mutex.lock();
+    auto& state = get_state();
 
-    T out = get_state().retval.value();
+    if (!ready)
+      state.mutex.lock();
+
+    if (not state.entry_coro.get_handle().done())
+      fprintf(stderr,
+              "fatal joinhandle error, resuming awaitable even though the "
+              "coroutine is NOT finished\n"),
+        std::terminate();
+
     get_state().mutex.unlock();
-    return std::move(out);
+    return std::move((static_cast<typename Coro<T>::promise_type&>(
+                        state.entry_coro.get_handle().promise()))
+                       .retval.value());
   }
 
 private:
-  SharedTaskStateRet<T>& get_state()
-  {
-    return static_cast<SharedTaskStateRet<T>&>(*m_state.load().get());
-  };
-
-  bool ready{ false };
+  SharedTaskState& get_state() { return *m_state.load().get(); };
 };
 
 };

@@ -5,7 +5,7 @@
 #include <queue>
 
 #include "../common.hh"
-#include "../scheduler.hh"
+#include "../runtime.hh"
 #include "../task.hh"
 
 namespace birdsong {
@@ -29,8 +29,7 @@ public:
     bool await_ready() const&
     {
       m_channel->mutex.lock();
-      instant = m_channel->m_queue.size() != 0;
-      return instant;
+      return instant = not m_channel->m_queue.empty();
     }
 
     void await_suspend(std::coroutine_handle<> handle) const&
@@ -43,9 +42,8 @@ public:
 
     T await_resume() const&
     {
-      if (!instant) {
+      if (not instant)
         m_channel->mutex.lock();
-      }
 
       T out = std::move(m_channel->m_queue.front());
       m_channel->m_queue.pop();

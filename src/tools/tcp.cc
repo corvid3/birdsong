@@ -7,13 +7,12 @@
 #include <netinet/in.h>
 #include <optional>
 #include <poll.h>
-#include <print>
 #include <sys/poll.h>
 #include <sys/socket.h>
 
 #include "coro.hh"
-#include "priv_reactor.hh"
-#include "priv_runtime.hh"
+#include "reactor.hh"
+#include "runtime.hh"
 #include "task.hh"
 #include "tools/tcp.hh"
 
@@ -26,17 +25,15 @@ setnonblock(unsigned fd)
   setsockopt(fd, SOL_SOCKET, SOCK_NONBLOCK, &val, sizeof val);
 }
 
-TCPListener::TCPListener(unsigned short port, Options const& options)
+TCPListener::TCPListener(unsigned short port, unsigned queue_size)
 {
   m_fd = socket(AF_INET, SOCK_STREAM, 0);
 
   if (m_fd == -1u)
     throw std::runtime_error("unable to create tcp listener");
 
-  if (options.reuseaddr) {
-    bool val = true;
-    setsockopt(m_fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof val);
-  }
+  int val = 1;
+  setsockopt(m_fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof val);
 
   struct sockaddr_in addr;
   addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -48,7 +45,7 @@ TCPListener::TCPListener(unsigned short port, Options const& options)
     throw std::runtime_error(
       std::format("unable to bind tcp listener {}", strerror(errno)));
 
-  if (listen(m_fd, options.max_incoming) < 0)
+  if (listen(m_fd, queue_size) < 0)
     throw std::runtime_error("unable to listen tcp listener socket");
 }
 
@@ -87,7 +84,7 @@ void
 TCPListener::AcceptAwaiter::await_suspend(std::coroutine_handle<> handle)
 {
   Runtime& rt = basic_handle_from_void(handle).promise().runtime;
-  Reactor& reactor = rt.get_atomic_data().reactor;
+  Reactor& reactor = rt.get_reactor();
   reactor.insert(
     Reactor::FDWait{ rt.create_waker(), listener.m_fd, { true, false } });
 }
@@ -143,12 +140,20 @@ TCPSocket::write(std::span<std::byte const> buffer) -> Write
   return Write(*this, buffer);
 }
 
+bool
+TCPSocket::Read::await_ready()
+{
+  struct pollfd pfd;
+  pfd.fd = socket.m_fd;
+  pfd.events = POLLIN;
+  return poll(&pfd, 1, 0) != 0;
+}
+
 void
 TCPSocket::Read::await_suspend(std::coroutine_handle<> handle)
 {
   Runtime& rt = basic_handle_from_void(handle).promise().runtime;
-  rt.get_atomic_data().reactor.insert(
-    { rt.create_waker(), socket.m_fd, { true, false } });
+  rt.get_reactor().insert({ rt.create_waker(), socket.m_fd, { true, false } });
 }
 
 std::expected<unsigned, unsigned>
@@ -162,12 +167,20 @@ TCPSocket::Read::await_resume()
     return val;
 }
 
+bool
+TCPSocket::Write::await_ready()
+{
+  struct pollfd pfd;
+  pfd.fd = socket.m_fd;
+  pfd.events = POLLOUT;
+  return poll(&pfd, 1, 0) != 0;
+}
+
 void
 TCPSocket::Write::await_suspend(std::coroutine_handle<> handle)
 {
   Runtime& rt = basic_handle_from_void(handle).promise().runtime;
-  rt.get_atomic_data().reactor.insert(
-    { rt.create_waker(), socket.m_fd, { false, true } });
+  rt.get_reactor().insert({ rt.create_waker(), socket.m_fd, { false, true } });
 }
 
 std::expected<unsigned, unsigned>
@@ -211,8 +224,7 @@ void
 TCPSocket::Connect::await_suspend(std::coroutine_handle<> handle)
 {
   Runtime& rt = basic_handle_from_void(handle).promise().runtime;
-  rt.get_atomic_data().reactor.insert(
-    { rt.create_waker(), m_fd, { false, true } });
+  rt.get_reactor().insert({ rt.create_waker(), m_fd, { false, true } });
 }
 
 std::optional<TCPSocket>

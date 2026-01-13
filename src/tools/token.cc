@@ -1,9 +1,10 @@
 #include <coroutine>
 #include <list>
+#include <memory>
 
 #include "common.hh"
 #include "coro.hh"
-#include "priv_runtime.hh"
+#include "runtime.hh"
 #include "task.hh"
 #include "tools/token.hh"
 
@@ -21,7 +22,7 @@ struct Token::Impl
 };
 
 Token::Token()
-  : m_impl(new Impl) {};
+  : m_impl(std::make_shared<Impl>()) {};
 
 Token::
 operator bool() const
