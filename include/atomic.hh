@@ -40,17 +40,24 @@ public:
       rhs.db = nullptr;
     }
 
-    Transaction& operator=(const Transaction&) = delete;
-    Transaction& operator=(Transaction&& rhs)
+    auto operator=(const Transaction&) -> Transaction& = delete;
+    auto operator=(Transaction&& rhs) noexcept -> Transaction&
     {
-      return *new (this) Transaction(std::move(rhs));
+      new (this) Transaction(std::move(rhs));
+      return *this;
     };
 
-    Transaction(Self& db)
+    explicit Transaction(Self& db)
       : db(&db) {};
 
-    typename Self::Data& operator*() const { return db->get_data(Key()); }
-    typename Self::Data* operator->() const { return &db->get_data(Key()); }
+    auto operator*() const -> typename Self::Data&
+    {
+      return db->get_data(Key());
+    }
+    auto operator->() const -> typename Self::Data*
+    {
+      return &db->get_data(Key());
+    }
 
     /* drops this transaction before destruction.
      * use this sparingly, it can result in some pretty unreasonable looking
@@ -76,7 +83,7 @@ public:
   /* attempts to acquire the resource w/ blocking */
   template<typename Self>
     requires Atomable<std::decay_t<Self>, Atom>
-  Transaction<Self> acquire(this Self& self)
+  auto acquire(this Self& self) -> Transaction<Self>
   {
     self.m_mutex.lock();
     return Transaction<Self>(self);
@@ -86,7 +93,7 @@ public:
    * returns an optional */
   template<typename Self>
     requires Atomable<std::decay_t<Self>, Atom>
-  std::optional<Transaction<Self>> try_acquire(this Self& self)
+  auto try_acquire(this Self& self) -> std::optional<Transaction<Self>>
   {
     if (!self.m_mutex.try_lock())
       return std::nullopt;
@@ -105,11 +112,11 @@ template<typename T>
 class AtomWrapper : public Atom
 {
 public:
-  AtomWrapper(T in)
+  explicit AtomWrapper(T in)
     : m_data(std::move(in)) {};
 
   using Data = T;
-  Data& get_data(Key) const { return m_data; };
+  auto get_data(Key /*unused*/) const -> Data& { return m_data; };
 
 private:
   Data mutable m_data;

@@ -97,7 +97,7 @@ private:
     /* evil downcast because it solves a problem */
     auto ptr = std::make_unique<Task>(*this, std::move(coro));
 
-    return { *this, std::move(ptr) };
+    return { this, std::move(ptr) };
   }
 
   static void worker(Queue&);

@@ -28,8 +28,13 @@ concept Cancellable = requires(Awaitable t) {
 class Waker : public Atom
 {
 public:
-  Waker(Runtime& runtime, std::unique_ptr<Task> task);
-  Waker(Waker&&);
+  Waker(Waker&&) noexcept;
+  ~Waker() = default;
+
+  Waker(const Waker&) = delete;
+  auto operator=(const Waker&) -> Waker& = delete;
+  auto operator=(Waker&&) -> Waker& = delete;
+  Waker(Runtime* runtime, std::unique_ptr<Task> task);
 
   /* NOTE: will attempt to lock the task it owns!
    * if you have any transactional locks on the task,
@@ -37,21 +42,17 @@ public:
   void wake();
 
   using Data = std::unique_ptr<Task>;
-  Data& get_data(Atom::Key) { return task; }
+  auto get_data(Atom::Key /*unused*/) -> Data& { return task; }
 
 private:
   /* TODO: i can probably use a memory pool for tasks */
-  Runtime& runtime;
+  Runtime* runtime;
   Data task;
 };
 
 struct SharedTaskState
 {
-  SharedTaskState(Task& dependent, Coro<> entry)
-    : dependent(dependent)
-    , entry_coro(std::move(entry)) {};
-
-  Task& dependent;
+  Task* dependent;
   Coro<> entry_coro;
 
   /* any JoinHandles of a task that are co_await'd have
@@ -89,43 +90,68 @@ public:
 
   Task(const Task&) = delete;
   Task(Task&&) = delete;
-  Task& operator=(const Task&) = delete;
-  Task& operator=(Task&&) = delete;
+  auto operator=(const Task&) -> Task& = delete;
+  auto operator=(Task&&) -> Task& = delete;
   virtual ~Task();
 
   void kill();
 
-  bool operator==(Task const& rhs) const { return this == &rhs; };
+  auto operator==(Task const& rhs) const -> bool { return this == &rhs; };
 
-  Data& get_data(Atom::Key) { return m_data; };
-  unsigned tag;
+  auto get_data(Atom::Key /*unused*/) -> Data& { return m_data; };
+
+  auto tag() const noexcept -> unsigned { return m_tag; };
 
 private:
+  unsigned m_tag;
   Data m_data;
 };
 
 class JoinHandleBase
 {
 public:
-  JoinHandleBase(Runtime& rt, Task& dependent)
+  JoinHandleBase(Runtime* rt, Task& dependent)
     : rt(rt)
     , m_state(dependent.acquire()->state.load()) {};
-
   JoinHandleBase(const JoinHandleBase&) = delete;
-  JoinHandleBase(JoinHandleBase&& rhs)
+  JoinHandleBase(JoinHandleBase&& rhs) noexcept
     : rt(rhs.rt)
     , m_state(rhs.m_state.load()) {};
+  ~JoinHandleBase() = default;
 
-  JoinHandleBase& operator=(const JoinHandleBase&) = delete;
-  JoinHandleBase& operator=(JoinHandleBase&&) = delete;
+  auto operator=(const JoinHandleBase&) -> JoinHandleBase& = delete;
+  auto operator=(JoinHandleBase&&) -> JoinHandleBase& = delete;
 
-  bool await_ready();
+  auto await_ready() -> bool;
   void await_suspend(std::coroutine_handle<>);
-  Task const& get_task() { return m_state.load()->dependent; }
+  auto get_task() -> Task const* { return m_state.load()->dependent; }
   void kill();
 
-protected:
-  Runtime& rt;
+  /* actual specialization for the implementation occurs
+   * in the template JoinHandle */
+  template<typename Return>
+  auto await_resume() -> Return
+  {
+    auto& state = *m_state.load();
+
+    if (!ready)
+      state.mutex.lock();
+
+    if (not state.entry_coro.get_handle().done()) {
+      fprintf(stderr,
+              "fatal joinhandle error, resuming awaitable even though the "
+              "coroutine is NOT finished\n"),
+        std::terminate();
+    }
+
+    state.mutex.unlock();
+    return std::move((static_cast<typename Coro<Return>::promise_type&>(
+                        state.entry_coro.get_handle().promise()))
+                       .retval.value());
+  }
+
+private:
+  Runtime* rt;
   bool ready{ false };
   std::atomic<std::shared_ptr<SharedTaskState>> m_state;
 };
@@ -136,34 +162,11 @@ template<typename T>
 class JoinHandle : public JoinHandleBase
 {
 public:
-  JoinHandle(const JoinHandle&) = delete;
-  JoinHandle(JoinHandle&& rhs) = default;
-  JoinHandle& operator=(const JoinHandle&) = delete;
-  JoinHandle& operator=(JoinHandle&&) = delete;
-
   using JoinHandleBase::JoinHandleBase;
-
-  T await_resume()
+  auto await_resume() -> T
   {
-    auto& state = get_state();
-
-    if (!ready)
-      state.mutex.lock();
-
-    if (not state.entry_coro.get_handle().done())
-      fprintf(stderr,
-              "fatal joinhandle error, resuming awaitable even though the "
-              "coroutine is NOT finished\n"),
-        std::terminate();
-
-    get_state().mutex.unlock();
-    return std::move((static_cast<typename Coro<T>::promise_type&>(
-                        state.entry_coro.get_handle().promise()))
-                       .retval.value());
+    return JoinHandleBase::await_resume<JoinHandle<T>, T>();
   }
-
-private:
-  SharedTaskState& get_state() { return *m_state.load().get(); };
 };
 
 };

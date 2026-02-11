@@ -58,7 +58,7 @@ Runtime::create_waker() -> Waker
   if (!task)
     std::cerr << "no current task, panicking!\n", std::terminate();
 
-  return { *this, std::move(task) };
+  return { this, std::move(task) };
 }
 
 auto

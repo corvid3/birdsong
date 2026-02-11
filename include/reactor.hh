@@ -16,6 +16,13 @@ namespace birdsong {
 class Reactor : public Atom
 {
 public:
+  Reactor() = default;
+  Reactor(const Reactor&) = delete;
+  Reactor(Reactor&&) = delete;
+  auto operator=(const Reactor&) -> Reactor& = delete;
+  auto operator=(Reactor&&) -> Reactor& = delete;
+  virtual ~Reactor() = default;
+
   struct WaitMask
   {
     bool read;
@@ -35,13 +42,11 @@ public:
     WaitMask mask;
   };
 
-  virtual ~Reactor() = default;
-
   virtual void insert(FDWait) = 0;
   virtual void poll() = 0;
 };
 
-class PollReactor : public Reactor
+class PollReactor final : public Reactor
 {
   /* TODO: every once in a while check if any of the
    * inserted wakers/tasks have been killed.
@@ -51,12 +56,17 @@ public:
   struct Data;
 
   PollReactor();
-  ~PollReactor();
+  ~PollReactor() final;
 
-  void insert(FDWait) override;
+  PollReactor(const PollReactor&) = delete;
+  PollReactor(PollReactor&&) = delete;
+  auto operator=(const PollReactor&) -> PollReactor& = delete;
+  auto operator=(PollReactor&&) -> PollReactor& = delete;
+
+  void insert(FDWait /*unused*/) override;
   void poll() override;
 
-  Data& get_data(Atom::Key) { return *m_data; }
+  auto get_data(Atom::Key /*unused*/) -> Data& { return *m_data; }
 
 private:
   std::unique_ptr<Data> m_data;

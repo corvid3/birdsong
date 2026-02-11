@@ -16,15 +16,18 @@ class AsyncMutex
 {
   struct LockAwaitable
   {
-    LockAwaitable(AsyncMutex& mutex);
+  public:
+    explicit LockAwaitable(AsyncMutex* mutex);
 
-    bool await_ready();
+    auto await_ready() -> bool;
     void await_suspend(std::coroutine_handle<> handle);
-    AsyncMutex& mutex;
+
+  private:
+    AsyncMutex* mutex;
   };
 
 public:
-  LockAwaitable lock();
+  auto lock() -> LockAwaitable;
   void unlock();
 
 private:
@@ -37,7 +40,7 @@ template<typename T>
 class AsyncMutexWrapper
 {
 public:
-  Coro<Empty> with_lock(std::invocable<T&> auto lambda) &&
+  auto with_lock(std::invocable<T&> auto lambda) && -> Coro<Empty>
   {
     co_await m_mutex.lock();
     auto&& out = lambda(m_data);

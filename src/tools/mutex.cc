@@ -21,8 +21,8 @@ Mutex::lock()
   m_threadLocked = this_thread_id;
 }
 
-bool
-Mutex::try_lock()
+auto
+Mutex::try_lock() -> bool
 {
   unsigned this_thread_id = ThreadQueue::GetThisThreadID();
   if (m_threadLocked == this_thread_id)
@@ -43,40 +43,40 @@ Mutex::unlock()
   if (m_threadLocked != this_thread_id)
     std::println("unlock when not owning mutex. thread: {}", this_thread_id),
       std::terminate();
-  m_threadLocked = -2u;
+  m_threadLocked = -2U;
   m_flag.clear(std::memory_order_release);
   m_flag.notify_one();
 }
 
-bool
-Mutex::is_locked()
+auto
+Mutex::is_locked() -> bool
 {
   return m_flag.test(std::memory_order::acquire);
 }
 
-AsyncMutex::LockAwaitable::LockAwaitable(AsyncMutex& mutex)
+AsyncMutex::LockAwaitable::LockAwaitable(AsyncMutex* mutex)
   : mutex(mutex) {};
 
 bool
 AsyncMutex::LockAwaitable::await_ready()
 {
-  return mutex.m_queueMutex.is_locked();
+  return mutex->m_queueMutex.is_locked();
 }
 
 void
 AsyncMutex::LockAwaitable::await_suspend(std::coroutine_handle<> handle)
 {
-  auto runtime = basic_handle_from_void(handle).promise().runtime;
+  auto* runtime = basic_handle_from_void(handle).promise().runtime;
 
-  mutex.m_queueMutex.lock();
-  mutex.waiting.push(runtime->create_waker());
-  mutex.m_queueMutex.unlock();
+  mutex->m_queueMutex.lock();
+  mutex->waiting.push(runtime->create_waker());
+  mutex->m_queueMutex.unlock();
 }
 
-AsyncMutex::LockAwaitable
-AsyncMutex::lock()
+auto
+AsyncMutex::lock() -> AsyncMutex::LockAwaitable
 {
-  return { *this };
+  return LockAwaitable{ this };
 };
 
 void

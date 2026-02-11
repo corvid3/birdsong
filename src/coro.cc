@@ -27,7 +27,7 @@ CoroBase::update_task_suspend(BasicHandle inside, BasicHandle outside)
   /* grab the current task handle, and set its promise to be that of
    * the lower coro promise. this will cause the lower coro
    * to be executed when the task is executed next */
-  auto runtime = outside.promise().runtime;
+  auto* runtime = outside.promise().runtime;
   runtime->acquire()->get_this_thread_data().m_currentTask->acquire()->handle =
     inside;
 
