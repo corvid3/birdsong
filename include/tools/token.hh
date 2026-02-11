@@ -21,7 +21,7 @@ class Token : public AwaitableBase
   struct Impl;
 
 public:
-  auto static constexpr SelectCoro = [](Runtime&, Empty) static -> Coro<> {
+  auto static constexpr SelectCoro = [](Empty) static -> Coro<> {
     co_return {};
   };
 

@@ -25,7 +25,7 @@ public:
   struct FDWait
   {
     Waker waker;
-    unsigned fd;
+    signed fd;
     WaitMask mask;
   };
 

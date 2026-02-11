@@ -2,8 +2,8 @@
 
 #include "../common.hh"
 #include "../task.hh"
+
 #include <condition_variable>
-#include <memory>
 #include <thread>
 
 namespace birdsong {
@@ -14,14 +14,14 @@ class Sleep : public AwaitableBase
 public:
   Sleep(const Sleep&) = delete;
   Sleep(Sleep&&) = delete;
-  Sleep& operator=(const Sleep&) = delete;
-  Sleep& operator=(Sleep&&) = delete;
+  auto operator=(const Sleep&) -> Sleep& = delete;
+  auto operator=(Sleep&&) -> Sleep& = delete;
 
-  Sleep(unsigned ms);
+  explicit Sleep(unsigned ms);
   ~Sleep();
 
   void reset(unsigned ms);
-  bool await_suspend(std::coroutine_handle<>);
+  auto await_suspend(std::coroutine_handle<>) -> bool;
 
 private:
   struct Data

@@ -1,21 +1,13 @@
-#include <coroutine>
+#include <array>
 #include <cstddef>
 #include <cstdio>
-#include <exception>
 #include <functional>
-#include <print>
-#include <stdexcept>
+#include <memory>
 #include <task.hh>
-#include <utility>
 
-#include "atomic.hh"
 #include "coro.hh"
-#include "io.hh"
 #include "reactor.hh"
 #include "runtime.hh"
-#include "tools/channel.hh"
-#include "tools/select.hh"
-#include "tools/sleep.hh"
 #include "tools/tcp.hh"
 #include "tools/token.hh"
 
@@ -23,18 +15,29 @@ using namespace birdsong;
 
 Token token;
 
-int
-main()
+auto
+some_coro() -> Coro<>
 {
+  co_return {};
+}
 
+auto
+main() -> int
+{
   std::thread thread([&]() {
     Runtime(std::unique_ptr<Reactor>(new PollReactor)).run([&]() -> Coro<> {
-      printf("test\n");
-      co_await Select(
-        SelectCase(Sleep(500), [](Empty) -> Coro<> { co_return {}; }));
-      printf("test\n");
-      token.go();
-      printf("test\n");
+      TCPListener listener(4444);
+      // std::unique_ptr<Stream> str(
+      //   std::make_unique<TCPSocket>((co_await listener.accept()).value()));
+
+      // TCPSocket str = *(co_await listener.accept());
+      auto io = make_polyio(*(co_await listener.accept()));
+
+      constexpr auto bufsize = 512;
+      std::array<std::byte, bufsize> buffer{};
+      // auto const out = co_await io.read(buffer);
+
+      read_all(&io, buffer);
 
       co_return {};
     });

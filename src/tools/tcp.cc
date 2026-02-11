@@ -26,20 +26,20 @@ setnonblock(unsigned fd)
   setsockopt(fd, SOL_SOCKET, SOCK_NONBLOCK, &val, sizeof val);
 }
 
-TCPListener::TCPListener(unsigned short port, unsigned queue_size)
+TCPListener::TCPListener(unsigned short port, signed queue_size)
 {
   m_fd = socket(AF_INET, SOCK_STREAM, 0);
 
-  if (m_fd == -1u)
+  if (m_fd == -1)
     throw std::runtime_error("unable to create tcp listener");
 
   int val = 1;
   setsockopt(m_fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof val);
 
-  struct sockaddr_in addr;
+  struct sockaddr_in addr{};
   addr.sin_addr.s_addr = htonl(INADDR_ANY);
   addr.sin_port = htons(port);
-  memset(addr.sin_zero, 0, sizeof addr.sin_zero);
+  memset((void*)addr.sin_zero, 0, sizeof addr.sin_zero);
   addr.sin_family = AF_INET;
 
   if (bind(m_fd, (struct sockaddr const*)&addr, sizeof addr) < 0)
@@ -52,27 +52,27 @@ TCPListener::TCPListener(unsigned short port, unsigned queue_size)
 
 TCPListener::~TCPListener()
 {
-  if (m_fd != -1u)
+  if (m_fd != -1)
     close(m_fd);
 }
 
-TCPListener::AcceptAwaiter::AcceptAwaiter(TCPListener& listener)
+TCPListener::AcceptAwaiter::AcceptAwaiter(TCPListener* listener)
   : listener(listener) {};
 
 auto
 TCPListener::accept() -> AcceptAwaiter
 {
-  return { *this };
+  return AcceptAwaiter{ this };
 }
 
-bool
-TCPListener::AcceptAwaiter::await_ready()
+auto
+TCPListener::AcceptAwaiter::await_ready() -> bool
 {
   /* do an in-place non-blocking poll to check if
    * the socket already has an incoming connection,
    * if so just continue the coroutine */
   struct pollfd pfd;
-  pfd.fd = listener.m_fd;
+  pfd.fd = listener->m_fd;
   pfd.events = 0 | POLLIN;
 
   if (poll(&pfd, 1, 0) < 0)
@@ -86,19 +86,20 @@ TCPListener::AcceptAwaiter::await_suspend(std::coroutine_handle<> handle)
 {
   auto rt = basic_handle_from_void(handle).promise().runtime;
   Reactor& reactor = rt->get_reactor();
-  reactor.insert(
-    Reactor::FDWait{ rt->create_waker(), listener.m_fd, { true, false } });
+  reactor.insert(Reactor::FDWait{ .waker = rt->create_waker(),
+                                  .fd = listener->m_fd,
+                                  .mask = { .read = true, .write = false } });
 }
 
-std::optional<TCPSocket>
-TCPListener::AcceptAwaiter::await_resume()
+auto
+TCPListener::AcceptAwaiter::await_resume() -> std::optional<TCPSocket>
 {
-  int incoming_fd;
-  struct sockaddr_in addr;
+  struct sockaddr_in addr{};
   socklen_t size = sizeof(addr);
 
-  if ((incoming_fd = ::accept(listener.m_fd, (struct sockaddr*)&addr, &size)) ==
-      -1)
+  int incoming_fd = ::accept(listener->m_fd, (struct sockaddr*)&addr, &size);
+
+  if (incoming_fd == -1)
     return std::nullopt;
   setnonblock(incoming_fd);
 
@@ -106,58 +107,59 @@ TCPListener::AcceptAwaiter::await_resume()
                    IPAddr(ntohl(addr.sin_addr.s_addr), ntohs(addr.sin_port)));
 }
 
-TCPSocket::TCPSocket(unsigned fd, IPAddr addr)
+TCPSocket::TCPSocket(signed fd, IPAddr addr)
   : m_fd(fd)
   , m_addr(addr) {};
 
 TCPSocket::~TCPSocket()
 {
-  if (m_fd != -1u)
+  if (m_fd != -1)
     close(m_fd);
 }
 
-TCPSocket::TCPSocket(TCPSocket&& rhs)
+TCPSocket::TCPSocket(TCPSocket&& rhs) noexcept
   : m_fd(rhs.m_fd)
   , m_addr(rhs.m_addr)
 {
-  rhs.m_fd = -1u;
+  rhs.m_fd = -1;
 }
 
-TCPSocket&
-TCPSocket::operator=(TCPSocket&& rhs)
+auto
+TCPSocket::operator=(TCPSocket&& rhs) noexcept -> TCPSocket&
 {
-  return *new (this) TCPSocket(std::move(rhs));
+  new (this) TCPSocket(std::move(rhs));
+  return *this;
 }
 
 auto
 TCPSocket::connect(Runtime&, unsigned short port, uint32_t address) -> Connect
 {
-  return Connect{ -1u, address, port };
+  return Connect{ -1U, address, port };
 }
 
 auto
 TCPSocket::read(std::span<std::byte> buffer) -> Read
 {
-  return Read(*this, buffer);
+  return { this, buffer };
 }
 
 auto
 TCPSocket::write(std::span<std::byte const> buffer) -> Write
 {
-  return Write(*this, buffer);
+  return { this, buffer };
 }
 
-IPAddr const&
-TCPSocket::addr() const
+auto
+TCPSocket::addr() const -> IPAddr const&
 {
   return m_addr;
 }
 
-bool
-TCPSocket::Read::await_ready()
+auto
+TCPSocket::Read::await_ready() -> bool
 {
-  struct pollfd pfd;
-  pfd.fd = socket.m_fd;
+  struct pollfd pfd{};
+  pfd.fd = socket->m_fd;
   pfd.events = POLLIN;
   return poll(&pfd, 1, 0) != 0;
 }
@@ -166,26 +168,27 @@ void
 TCPSocket::Read::await_suspend(std::coroutine_handle<> handle)
 {
   auto rt = basic_handle_from_void(handle).promise().runtime;
-  rt->get_reactor().insert(
-    { rt->create_waker(), socket.m_fd, { true, false } });
+  rt->get_reactor().insert({ .waker = rt->create_waker(),
+                             .fd = socket->m_fd,
+                             .mask = { .read = true, .write = false } });
 }
 
-std::expected<unsigned, unsigned>
-TCPSocket::Read::await_resume()
+auto
+TCPSocket::Read::await_resume() -> std::expected<unsigned, unsigned>
 {
-  unsigned val = ::recv(socket.m_fd, buf.data(), buf.size(), 0);
+  auto val = ::recv(socket->m_fd, buf.data(), buf.size(), 0);
 
-  if (val == -1u)
+  if (val == -1)
     return std::unexpected(errno);
-  else
-    return val;
+
+  return val;
 }
 
-bool
-TCPSocket::Write::await_ready()
+auto
+TCPSocket::Write::await_ready() -> bool
 {
-  struct pollfd pfd;
-  pfd.fd = socket.m_fd;
+  struct pollfd pfd{};
+  pfd.fd = socket->m_fd;
   pfd.events = POLLOUT;
   return poll(&pfd, 1, 0) != 0;
 }
@@ -194,29 +197,29 @@ void
 TCPSocket::Write::await_suspend(std::coroutine_handle<> handle)
 {
   auto rt = basic_handle_from_void(handle).promise().runtime;
-  rt->get_reactor().insert(
-    { rt->create_waker(), socket.m_fd, { false, true } });
+  rt->get_reactor().insert({ .waker = rt->create_waker(),
+                             .fd = socket->m_fd,
+                             .mask = { .read = false, .write = true } });
 }
 
-std::expected<unsigned, unsigned>
-TCPSocket::Write::await_resume()
+auto
+TCPSocket::Write::await_resume() -> std::expected<unsigned, unsigned>
 {
   /* SIGPIPE is weird and ugly. don't send it. */
-  unsigned val = ::send(socket.m_fd, buf.data(), buf.size(), MSG_NOSIGNAL);
+  unsigned val = ::send(socket->m_fd, buf.data(), buf.size(), MSG_NOSIGNAL);
 
-  if (val == -1u)
+  if (val == -1U)
     return std::unexpected(errno);
-  else
-    return val;
+  return val;
 }
 
-bool
-TCPSocket::Connect::await_ready()
+auto
+TCPSocket::Connect::await_ready() -> bool
 {
   m_fd = socket(AF_INET, SOCK_STREAM, 0);
 
   /* failure to create a socket in the first place is pretty exceptional */
-  if (m_fd == -1u)
+  if (m_fd == -1)
     throw std::runtime_error("unable to create tcp socket\n");
 
   setnonblock(m_fd);
@@ -238,14 +241,16 @@ TCPSocket::Connect::await_ready()
 void
 TCPSocket::Connect::await_suspend(std::coroutine_handle<> handle)
 {
-  auto rt = basic_handle_from_void(handle).promise().runtime;
-  rt->get_reactor().insert({ rt->create_waker(), m_fd, { false, true } });
+  auto* rt = basic_handle_from_void(handle).promise().runtime;
+  rt->get_reactor().insert({ .waker = rt->create_waker(),
+                             .fd = m_fd,
+                             .mask = { .read = false, .write = true } });
 }
 
-std::optional<TCPSocket>
-TCPSocket::Connect::await_resume()
+auto
+TCPSocket::Connect::await_resume() -> std::optional<TCPSocket>
 {
-  if (m_fd == -1u)
+  if (m_fd == -1)
     return std::nullopt;
 
   return TCPSocket(m_fd, IPAddr(m_addr, m_port));

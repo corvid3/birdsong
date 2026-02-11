@@ -7,16 +7,16 @@
 
 using namespace birdsong;
 
-bool
-AwaitableBase::await_ready()
+auto
+AwaitableBase::await_ready() -> bool
 {
   return false;
 }
 
-void AwaitableBase::await_suspend(std::coroutine_handle<>){};
+void AwaitableBase::await_suspend(std::coroutine_handle<> /*unused*/){};
 
-Empty
-AwaitableBase::await_resume()
+auto
+AwaitableBase::await_resume() -> Empty
 {
   return {};
 };
@@ -41,20 +41,22 @@ CoroBase::update_task_suspend(BasicHandle inside, BasicHandle outside)
 void
 CoroBase::update_task_resume(BasicHandle inside, BasicHandle outside)
 {
-  if (outside)
+  if (outside) {
     inside.promise()
       .runtime->acquire()
       ->get_this_thread_data()
       .m_currentTask->acquire()
       ->handle = PromiseBase::handle_from_void(outside);
+  }
 
   /* exception handling jank */
   if (inside.promise().exception)
     std::rethrow_exception(inside.promise().exception);
 }
 
-std::coroutine_handle<PromiseBase>
+auto
 PromiseBase::handle_from_void(std::coroutine_handle<> const& handle)
+  -> std::coroutine_handle<PromiseBase>
 {
   return std::coroutine_handle<PromiseBase>::from_address(handle.address());
 }
@@ -70,14 +72,14 @@ try {
   std::terminate();
 }
 
-std::suspend_always
-PromiseBase::initial_suspend()
+auto
+PromiseBase::initial_suspend() -> std::suspend_always
 {
   return {};
 }
 
-bool
-PromiseBase::final_kill::await_ready() noexcept
+auto
+PromiseBase::final_kill::await_ready() noexcept -> bool
 {
   return false;
 }

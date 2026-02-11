@@ -20,12 +20,13 @@ class AwaitableBase
 public:
   /* by default, all awaiters are lazily evaluated.
    * override this is you want to check inline */
-  bool await_ready();
+  static auto await_ready() -> bool;
+
   /* by default, on suspend, the currently executing coroutine
    * will be cooperatively scheduled later. shadow this if you
    * intend to interface with the task system. */
-  void await_suspend(std::coroutine_handle<>);
-  Empty await_resume();
+  static void await_suspend(std::coroutine_handle<>);
+  static auto await_resume() -> Empty;
 };
 
 /* general use spinlock-based mutex.
@@ -39,29 +40,34 @@ class Mutex
 public:
   void lock();
   void unlock();
-  bool is_locked();
+  auto is_locked() -> bool;
 
   /* returns false if unable to lock */
-  bool try_lock();
+  auto try_lock() -> bool;
 
 private:
   std::atomic_flag m_flag{ false };
-  unsigned m_threadLocked{ -2u };
+  unsigned m_threadLocked{ -2U };
 };
 
 class MutexLock
 {
 public:
-  MutexLock(Mutex& mutex)
+  MutexLock(const MutexLock&) = delete;
+  MutexLock(MutexLock&&) = delete;
+  explicit MutexLock(Mutex* mutex)
     : mutex(mutex)
   {
-    mutex.lock();
+    mutex->lock();
   }
 
-  ~MutexLock() { mutex.unlock(); }
+  auto operator=(const MutexLock&) -> MutexLock& = delete;
+  auto operator=(MutexLock&&) -> MutexLock& = delete;
+
+  ~MutexLock() { mutex->unlock(); }
 
 private:
-  Mutex& mutex;
+  Mutex* mutex;
 };
 
 template<typename T>
@@ -69,13 +75,14 @@ class MutexWrapper
 {
 public:
   MutexWrapper() = default;
-  MutexWrapper(T in)
+
+  explicit MutexWrapper(T in)
     requires std::move_constructible<T>
     : m_data(std::move(in)) {};
 
   auto with_lock(std::invocable<T&> auto lambda)
   {
-    MutexLock lock(m_mutex);
+    MutexLock lock(&m_mutex);
     return lambda(m_data);
   };
 

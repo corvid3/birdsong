@@ -25,12 +25,13 @@ Runtime::Runtime(std::unique_ptr<Reactor> reactor, unsigned num_threads)
 Runtime::~Runtime() = default;
 
 void
-Runtime::run(std::function<Coro<>()> coro)
+Runtime::run(std::function<Coro<>()> const& coro)
 {
-  if (acquire()->m_running)
+  if (acquire()->m_running) {
     std::cerr << "attempting to start multiple run loops on a single "
                  "crowroutine runtime\n",
       std::terminate();
+  }
 
   acquire()->m_running = true;
 
@@ -43,30 +44,31 @@ Runtime::run(std::function<Coro<>()> coro)
 }
 
 /* unsets the current task & creates a waker set to it */
-Waker
-Runtime::create_waker()
+auto
+Runtime::create_waker() -> Waker
 {
-  if (ThreadQueue::GetThisThreadID() == -1u)
+  if (ThreadQueue::GetThisThreadID() == -1U) {
     std::cerr << "attempting to create a waker in a non-runtime thread, dont "
                  "call this method!",
       std::terminate();
+  }
 
   auto& task = acquire()->get_this_thread_data().m_currentTask;
 
   if (!task)
     std::cerr << "no current task, panicking!\n", std::terminate();
 
-  return Waker(*this, std::move(task));
+  return { *this, std::move(task) };
 }
 
-Task&
-Runtime::current_task()
+auto
+Runtime::current_task() -> Task&
 {
   return *acquire()->get_this_thread_data().m_currentTask;
 }
 
-unsigned
-Runtime::num_tasks()
+auto
+Runtime::num_tasks() -> unsigned
 {
   return acquire()->m_aliveTasks;
 }

@@ -56,16 +56,17 @@ Sleep::~Sleep()
   sleep_thread.join();
 }
 
-bool
-Sleep::await_suspend(std::coroutine_handle<> handle)
+auto
+Sleep::await_suspend(std::coroutine_handle<> handle) -> bool
 {
   return this->data->waker.with_lock([&](Data::Data2& in) {
-    auto rt = basic_handle_from_void(handle).promise().runtime;
+    auto* rt = basic_handle_from_void(handle).promise().runtime;
+
     Waker waker = rt->create_waker();
     if (in.done)
       return false;
-    else
-      in.waker.emplace(std::move(waker));
+
+    in.waker.emplace(std::move(waker));
     return true;
   });
 }

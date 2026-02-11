@@ -1,87 +1,94 @@
 #pragma once
 
 #include <compare>
+#include <concepts>
 #include <coroutine>
 #include <cstddef>
 #include <expected>
+#include <memory>
 #include <optional>
 #include <span>
+#include <type_traits>
+#include <utility>
 
 #include "../common.hh"
 #include "../coro.hh"
 #include "../io.hh"
 #include "../net.hh"
 
-/* im _not_ trying to build a cross-platform networking
- * library here, so some of the internal posix networking
- * datatypes might leak out. */
-
 namespace birdsong {
 
 class TCPSocket
 {
-  struct Read : AwaitableBase
+  class Read
   {
-    Read(TCPSocket& socket, std::span<std::byte> buf)
+  public:
+    Read(TCPSocket* socket, std::span<std::byte> buf)
       : socket(socket)
       , buf(buf) {};
 
-    bool await_ready();
-    void await_suspend(std::coroutine_handle<>);
-    std::expected<unsigned, unsigned> await_resume();
+    auto await_ready() -> bool;
+    auto await_suspend(std::coroutine_handle<> /*unused*/) -> void;
+    auto await_resume() -> IOResult<unsigned>;
 
-    TCPSocket& socket;
+  private:
+    TCPSocket* socket;
     std::span<std::byte> buf;
   };
 
-  struct Write : AwaitableBase
+  class Write
   {
-    Write(TCPSocket& socket, std::span<const std::byte> buf)
+  public:
+    Write(TCPSocket* socket, std::span<const std::byte> buf)
       : socket(socket)
       , buf(buf) {};
 
-    bool await_ready();
-    void await_suspend(std::coroutine_handle<>);
-    IOResult<unsigned> await_resume();
+    auto await_ready() -> bool;
+    auto await_suspend(std::coroutine_handle<> /*unused*/) -> void;
+    auto await_resume() -> IOResult<unsigned>;
 
-    TCPSocket& socket;
+  private:
+    TCPSocket* socket;
     std::span<std::byte const> buf;
   };
 
-  struct Connect : AwaitableBase
+  class Connect
   {
+  public:
     Connect(unsigned int m_fd, unsigned int m_addr, unsigned short m_port)
       : m_fd(m_fd)
       , m_addr(m_addr)
       , m_port(m_port) {};
 
-    bool await_ready();
+    auto await_ready() -> bool;
     void await_suspend(std::coroutine_handle<>);
-    std::optional<TCPSocket> await_resume();
+    auto await_resume() -> std::optional<TCPSocket>;
 
-    unsigned m_fd;
+  private:
+    signed m_fd;
     unsigned m_addr;
     unsigned short m_port;
   };
 
 public:
-  TCPSocket(unsigned fd, IPAddr addr);
+  TCPSocket(signed fd, IPAddr addr);
   ~TCPSocket();
 
   TCPSocket(const TCPSocket&) = delete;
-  TCPSocket& operator=(const TCPSocket&) = delete;
+  auto operator=(const TCPSocket&) -> TCPSocket& = delete;
+  TCPSocket(TCPSocket&&) noexcept;
+  auto operator=(TCPSocket&&) noexcept -> TCPSocket&;
 
-  TCPSocket(TCPSocket&&);
-  TCPSocket& operator=(TCPSocket&&);
+  static auto connect(Runtime&, unsigned short port, uint32_t address)
+    -> Connect;
 
-  static Connect connect(Runtime&, unsigned short port, uint32_t address);
+  auto read(std::span<std::byte> buffer) -> Read;
+  auto write(std::span<std::byte const> buffer) -> Write;
 
-  Read read(std::span<std::byte> buffer);
-  Write write(std::span<std::byte const> buffer);
-  IPAddr const& addr() const;
+  [[nodiscard]] auto addr() const -> IPAddr const&;
 
 private:
-  unsigned m_fd = -1u;
+  signed m_fd{ -1 };
   IPAddr m_addr;
 };
 
@@ -90,29 +97,36 @@ class TCPListener
   class AcceptAwaiter
   {
   public:
-    AcceptAwaiter(TCPListener& listener);
+    explicit AcceptAwaiter(TCPListener* listener);
 
-    bool await_ready();
+    auto await_ready() -> bool;
     void await_suspend(std::coroutine_handle<>);
 
     /* if a connection is aborted in the process of accepting,
      * then this function can return nullopt */
-    std::optional<TCPSocket> await_resume();
+    auto await_resume() -> std::optional<TCPSocket>;
 
   private:
-    TCPListener& listener;
+    TCPListener* listener;
   };
 
 public:
-  TCPListener(unsigned short port, unsigned queue_size = 16);
+  TCPListener(const TCPListener&) = default;
+  TCPListener(TCPListener&&) = delete;
+  auto operator=(const TCPListener&) -> TCPListener& = default;
+  auto operator=(TCPListener&&) -> TCPListener& = delete;
+
+  auto constexpr static default_queue_size = 16;
+  explicit TCPListener(unsigned short port,
+                       signed queue_size = default_queue_size);
   ~TCPListener();
 
   /* asynchronously blocks this thread and awaits
    * an incoming connection */
-  AcceptAwaiter accept();
+  auto accept() -> AcceptAwaiter;
 
 private:
-  unsigned m_fd = -1u;
+  int m_fd{ -1 };
 };
 
 };

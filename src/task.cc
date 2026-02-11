@@ -13,9 +13,7 @@ Waker::Waker(Runtime& runtime, std::unique_ptr<Task> task)
 
 Waker::Waker(Waker&& rhs)
   : runtime(rhs.runtime)
-  , task(std::move(*rhs.acquire())) {
-
-  };
+  , task(std::move(*rhs.acquire())) {};
 
 void
 Waker::wake()
@@ -65,14 +63,7 @@ Task::kill()
 {
   auto transaction = acquire();
   transaction->state.load()->killswitch = true;
-  auto rt = transaction->handle.promise().runtime;
-
-  // if (transaction->handle) {
-  //   auto handle = transaction->handle;
-  //   transaction->handle = nullptr;
-  //   // if (not handle.done())
-  //   //   handle.destroy();
-  // }
+  auto* rt = transaction->handle.promise().runtime;
 
   rt->acquire()->m_aliveTasks--;
 }

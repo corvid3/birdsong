@@ -1,7 +1,6 @@
 #pragma once
 
 #include <deque>
-#include <list>
 #include <queue>
 
 #include "../common.hh"
@@ -35,8 +34,8 @@ public:
     void await_suspend(std::coroutine_handle<> handle) const&
     {
       PromiseBase& promise = basic_handle_from_void(handle).promise();
-      Runtime& rt = promise.runtime;
-      m_channel->m_recvWaker.emplace(rt.create_waker());
+      Runtime* rt = promise.runtime;
+      m_channel->m_recvWaker.emplace(rt->create_waker());
       m_channel->mutex.unlock();
     }
 
